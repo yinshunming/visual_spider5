@@ -1,0 +1,23 @@
+# Maven
+target/
+!.mvn/wrapper/maven-wrapper.jar
+
+# IDE
+.idea/
+*.iml
+.vscode/
+.settings/
+.project
+.classpath
+
+# Logs
+*.log
+logs/
+
+# 前端（M0-2 起使用）
+node_modules/
+dist/
+
+# OS
+.DS_Store
+Thumbs.db
