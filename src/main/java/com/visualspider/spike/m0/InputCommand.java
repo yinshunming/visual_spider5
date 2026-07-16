@@ -24,4 +24,5 @@ public record InputCommand(
     public static final String TYPE_BACK = "back";
     public static final String TYPE_FORWARD = "forward";
     public static final String TYPE_RELOAD = "reload";
+    public static final String TYPE_SELECT = "select";
 }

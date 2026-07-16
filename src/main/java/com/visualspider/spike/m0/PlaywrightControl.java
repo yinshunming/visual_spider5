@@ -89,6 +89,38 @@ public final class PlaywrightControl {
                 .setQuality(80)));
     }
 
+    /**
+     * 选择模式：按远程视口坐标检查 DOM 元素，返回摘要（含 boundingBox）。
+     * 用 {@code document.elementFromPoint} 重新查询，不触发原页面动作，不保存 ElementHandle。
+     */
+    @SuppressWarnings("unchecked")
+    public CompletableFuture<SelectionRecord> inspectElement(int x, int y) {
+        return lane.submit(() -> {
+            String js = "() => {"
+                    + "  const el = document.elementFromPoint(" + x + ", " + y + ");"
+                    + "  if (!el) return null;"
+                    + "  const r = el.getBoundingClientRect();"
+                    + "  return { tagName: el.tagName, id: el.id || '', className: el.className || '',"
+                    + "    text: (el.textContent || '').substring(0, 200),"
+                    + "    x: r.x, y: r.y, width: r.width, height: r.height };"
+                    + "}";
+            java.util.Map<String, Object> info = (java.util.Map<String, Object>) page().evaluate(js);
+            if (info == null) {
+                return null;
+            }
+            return new SelectionRecord(
+                    (String) info.get("tagName"),
+                    (String) info.get("id"),
+                    (String) info.get("className"),
+                    (String) info.get("text"),
+                    ((Number) info.get("x")).doubleValue(),
+                    ((Number) info.get("y")).doubleValue(),
+                    ((Number) info.get("width")).doubleValue(),
+                    ((Number) info.get("height")).doubleValue()
+            );
+        });
+    }
+
     public CompletableFuture<String> textContent(String selector) {
         return lane.submit(() -> page().textContent(selector));
     }

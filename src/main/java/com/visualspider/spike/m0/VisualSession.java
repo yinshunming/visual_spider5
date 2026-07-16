@@ -3,10 +3,11 @@ package com.visualspider.spike.m0;
 import java.util.concurrent.CompletionException;
 
 /**
- * 远程浏览器配置会话：绑定一个 BrowserLane + Playwright 控制类 + screencast 帧生产 + 帧缓冲 + 序号守卫。
+ * 远程浏览器配置会话：绑定一个 BrowserLane + Playwright 控制类 + 帧生产 + 帧缓冲 + 序号守卫。
  *
  * <p>M0 spike：不做认证/所有权/每用户一会话限制（M2）；单会话独立非持久化 BrowserContext。
  * 输入命令按远程视口换算坐标、拒绝越界/过期；帧通道只留最新帧（丢旧）。
+ * 选择模式（TYPE_SELECT）按坐标检查 DOM 元素，不触发原页面动作，不保存 ElementHandle。
  */
 public final class VisualSession implements AutoCloseable {
     private final String sessionId;
@@ -16,6 +17,7 @@ public final class VisualSession implements AutoCloseable {
     private final InputSequencer sequencer;
     private final FrameProducer frameProducer;
     private FrameProducer.FrameHandle frameHandle;
+    private volatile SelectionRecord selection;
 
     public VisualSession(String sessionId, String startUrl) {
         this.sessionId = sessionId;
@@ -36,6 +38,11 @@ public final class VisualSession implements AutoCloseable {
 
     public String sessionId() {
         return sessionId;
+    }
+
+    /** 包级访问控制类，供测试取元素坐标。 */
+    PlaywrightControl control() {
+        return control;
     }
 
     /**
@@ -80,6 +87,13 @@ public final class VisualSession implements AutoCloseable {
                 case InputCommand.TYPE_BACK -> control.goBack().join();
                 case InputCommand.TYPE_FORWARD -> control.goForward().join();
                 case InputCommand.TYPE_RELOAD -> control.reload().join();
+                case InputCommand.TYPE_SELECT -> {
+                    int[] r = ViewportMapper.toRemote(cmd.x(), cmd.y(), cmd.clientWidth(), cmd.clientHeight());
+                    if (r == null) {
+                        return false;
+                    }
+                    this.selection = control.inspectElement(r[0], r[1]).join();
+                }
                 default -> {
                     return false;
                 }
@@ -102,7 +116,8 @@ public final class VisualSession implements AutoCloseable {
                 ViewportMapper.REMOTE_WIDTH,
                 ViewportMapper.REMOTE_HEIGHT,
                 false,
-                null
+                null,
+                selection
         )).join();
     }
 

@@ -16,9 +16,9 @@ import java.util.concurrent.Executors;
 /**
  * 远程浏览器 WebSocket 端点：每连接创建一个 {@link VisualSession}。
  *
- * <p>发送：二进制 JPEG 帧（从 FrameBuffer drain，客户端跟不上时丢旧）+ JSON 状态消息。
+ * <p>发送：二进制 JPEG 帧（从 FrameBuffer drain，客户端跟不上时丢旧）+ JSON 状态消息（含选择结果）。
  * 接收：JSON 输入命令，按远程视口换算坐标、拒绝越界/过期。
- * M0 spike：不做握手认证/所有权（M2）。
+ * select 命令后推送含 selection 的状态消息。M0 spike：不做握手认证/所有权（M2）。
  */
 @Component
 public class VisualBrowserEndpoint extends AbstractWebSocketHandler {
@@ -73,7 +73,7 @@ public class VisualBrowserEndpoint extends AbstractWebSocketHandler {
         try {
             InputCommand cmd = objectMapper.readValue(message.getPayload(), InputCommand.class);
             boolean accepted = session.handle(cmd);
-            if (accepted && session.isNavigation(cmd)) {
+            if (accepted && (session.isNavigation(cmd) || InputCommand.TYPE_SELECT.equals(cmd.type()))) {
                 sendStatus(ws, session);
             }
         } catch (Exception e) {
@@ -99,7 +99,7 @@ public class VisualBrowserEndpoint extends AbstractWebSocketHandler {
     private void sendError(WebSocketSession ws, VisualSession session, String message) {
         try {
             StatusMessage err = new StatusMessage(session.sessionId(), null, ViewportMapper.REMOTE_WIDTH,
-                    ViewportMapper.REMOTE_HEIGHT, false, message);
+                    ViewportMapper.REMOTE_HEIGHT, false, message, null);
             ws.sendMessage(new TextMessage(objectMapper.writeValueAsString(err)));
         } catch (Exception ignored) {
         }
