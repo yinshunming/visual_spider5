@@ -17,6 +17,7 @@ logs/
 # 前端（M0-2 起使用）
 node_modules/
 dist/
+frontend/node/
 
 # OS
 .DS_Store

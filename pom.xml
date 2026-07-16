@@ -30,6 +30,11 @@
         </dependency>
 
         <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-websocket</artifactId>
+        </dependency>
+
+        <dependency>
             <groupId>com.microsoft.playwright</groupId>
             <artifactId>playwright</artifactId>
             <version>${playwright.version}</version>
@@ -71,6 +76,48 @@
                 <configuration>
                     <mainClass>com.microsoft.playwright.CLI</mainClass>
                 </configuration>
+            </plugin>
+
+            <!-- 前端构建：generate-resources 阶段跑 npm install + build，产物写入 target/classes/static 随 JAR 打包 -->
+            <plugin>
+                <groupId>com.github.eirslett</groupId>
+                <artifactId>frontend-maven-plugin</artifactId>
+                <version>1.15.1</version>
+                <configuration>
+                    <workingDirectory>frontend</workingDirectory>
+                    <installDirectory>frontend</installDirectory>
+                    <nodeVersion>v22.14.0</nodeVersion>
+                    <nodeDownloadRoot>https://npmmirror.com/mirrors/node/</nodeDownloadRoot>
+                </configuration>
+                <executions>
+                    <execution>
+                        <id>install-node-and-npm</id>
+                        <goals>
+                            <goal>install-node-and-npm</goal>
+                        </goals>
+                        <phase>generate-resources</phase>
+                    </execution>
+                    <execution>
+                        <id>npm-install</id>
+                        <goals>
+                            <goal>npm</goal>
+                        </goals>
+                        <phase>generate-resources</phase>
+                        <configuration>
+                            <arguments>install</arguments>
+                        </configuration>
+                    </execution>
+                    <execution>
+                        <id>npm-build</id>
+                        <goals>
+                            <goal>npm</goal>
+                        </goals>
+                        <phase>generate-resources</phase>
+                        <configuration>
+                            <arguments>run build</arguments>
+                        </configuration>
+                    </execution>
+                </executions>
             </plugin>
         </plugins>
     </build>

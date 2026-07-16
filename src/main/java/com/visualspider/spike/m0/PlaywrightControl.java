@@ -82,6 +82,13 @@ public final class PlaywrightControl {
                 .setType(ScreenshotType.JPEG)));
     }
 
+    /** 视口截图（非整页），存内存返回 JPEG 字节数组，供 screenshot 帧生产回退使用。 */
+    public CompletableFuture<byte[]> screenshotViewport() {
+        return lane.submit(() -> page().screenshot(new Page.ScreenshotOptions()
+                .setType(ScreenshotType.JPEG)
+                .setQuality(80)));
+    }
+
     public CompletableFuture<String> textContent(String selector) {
         return lane.submit(() -> page().textContent(selector));
     }
