@@ -90,7 +90,7 @@ public final class PlaywrightControl {
     }
 
     /**
-     * 选择模式：按远程视口坐标检查 DOM 元素，返回摘要（含 boundingBox）。
+     * 选择模式：按远程视口坐标检查 DOM 元素，返回摘要（含 boundingBox 与候选 CSS/XPath）。
      * 用 {@code document.elementFromPoint} 重新查询，不触发原页面动作，不保存 ElementHandle。
      */
     @SuppressWarnings("unchecked")
@@ -108,16 +108,76 @@ public final class PlaywrightControl {
             if (info == null) {
                 return null;
             }
+            String tagName = (String) info.get("tagName");
+            String id = (String) info.get("id");
+            String className = (String) info.get("className");
             return new SelectionRecord(
-                    (String) info.get("tagName"),
-                    (String) info.get("id"),
-                    (String) info.get("className"),
+                    tagName,
+                    id,
+                    className,
                     (String) info.get("text"),
                     ((Number) info.get("x")).doubleValue(),
                     ((Number) info.get("y")).doubleValue(),
                     ((Number) info.get("width")).doubleValue(),
-                    ((Number) info.get("height")).doubleValue()
+                    ((Number) info.get("height")).doubleValue(),
+                    CandidateGenerator.css(tagName, id, className),
+                    CandidateGenerator.xpath(tagName, id, className)
             );
+        });
+    }
+
+    /**
+     * 手写选择器校验：querySelectorAll(css) 或 document.evaluate(xpath) 重新查询 DOM，
+     * 返回匹配数与每个元素摘要（boundingBox 远程视口坐标）；非法语法返回 valid=false + error。
+     * 不保存 ElementHandle。
+     */
+    @SuppressWarnings("unchecked")
+    public CompletableFuture<ValidationResult> validateSelector(String selector, String type) {
+        return lane.submit(() -> {
+            Object result = page().evaluate(
+                    "(args) => {"
+                            + "  const sel = args.sel, t = args.type;"
+                            + "  try {"
+                            + "    let nodes = [];"
+                            + "    if (t === 'css') {"
+                            + "      nodes = Array.from(document.querySelectorAll(sel));"
+                            + "    } else {"
+                            + "      const xr = document.evaluate(sel, document, null, XPathResult.ORDERED_NODE_SNAPSHOT_TYPE, null);"
+                            + "      for (let i = 0; i < xr.snapshotLength; i++) nodes.push(xr.snapshotItem(i));"
+                            + "    }"
+                            + "    return nodes.filter(n => n.nodeType === 1).map(el => {"
+                            + "      const r = el.getBoundingClientRect();"
+                            + "      return { tagName: el.tagName, id: el.id || '', className: el.className || '',"
+                            + "        text: (el.textContent || '').substring(0, 100),"
+                            + "        x: r.x, y: r.y, width: r.width, height: r.height };"
+                            + "    });"
+                            + "  } catch (e) { return { error: String(e) }; }"
+                            + "}",
+                    java.util.Map.of("sel", selector, "type", type)
+            );
+            if (result instanceof java.util.Map) {
+                java.util.Map<?, ?> errMap = (java.util.Map<?, ?>) result;
+                Object err = errMap.get("error");
+                if (err != null) {
+                    return new ValidationResult(false, 0, String.valueOf(err), java.util.List.of());
+                }
+            }
+            java.util.List<java.util.Map<String, Object>> maps =
+                    (java.util.List<java.util.Map<String, Object>>) result;
+            java.util.List<ElementSummary> elements = new java.util.ArrayList<>();
+            for (java.util.Map<String, Object> m : maps) {
+                elements.add(new ElementSummary(
+                        (String) m.get("tagName"),
+                        (String) m.get("id"),
+                        (String) m.get("className"),
+                        (String) m.get("text"),
+                        ((Number) m.get("x")).doubleValue(),
+                        ((Number) m.get("y")).doubleValue(),
+                        ((Number) m.get("width")).doubleValue(),
+                        ((Number) m.get("height")).doubleValue()
+                ));
+            }
+            return new ValidationResult(true, elements.size(), null, elements);
         });
     }
 

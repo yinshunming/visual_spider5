@@ -10,6 +10,9 @@ const connected = ref(false)
 const frameSrc = ref('')
 const mode = ref<'browse' | 'select'>('browse')
 const selection = ref<any>(null)
+const validation = ref<any>(null)
+const selectorText = ref('#input')
+const selectorType = ref<'css' | 'xpath'>('css')
 
 let ws: WebSocket | null = null
 let sessionId = ''
@@ -44,6 +47,10 @@ function connect() {
         if (msg.url !== undefined) statusUrl.value = msg.url
         if (msg.selection !== undefined && msg.selection !== null) {
           selection.value = msg.selection
+          validation.value = null
+        }
+        if (msg.validationResult !== undefined && msg.validationResult !== null) {
+          validation.value = msg.validationResult
         }
       } catch {
         // 忽略非 JSON 文本
@@ -60,7 +67,6 @@ function onClick(e: MouseEvent) {
   const rect = img.getBoundingClientRect()
   const x = Math.round(e.clientX - rect.left)
   const y = Math.round(e.clientY - rect.top)
-  // 选择模式发 select（只检查 DOM，不触发原页面动作）；浏览模式发 click
   send({ type: mode.value === 'select' ? 'select' : 'click', x, y })
 }
 
@@ -80,17 +86,34 @@ function navigate() {
 function toggleMode() {
   mode.value = mode.value === 'browse' ? 'select' : 'browse'
   selection.value = null
+  validation.value = null
 }
 
-// 高亮框：selection.boundingBox 是远程视口坐标，按百分比换算到 frame-wrap（与 img 同尺寸，自适应缩放）
-const highlightStyle = computed(() => {
-  if (!selection.value) return { display: 'none' }
-  return {
-    left: (selection.value.x / REMOTE_W * 100) + '%',
-    top: (selection.value.y / REMOTE_H * 100) + '%',
-    width: (selection.value.width / REMOTE_W * 100) + '%',
-    height: (selection.value.height / REMOTE_H * 100) + '%',
+function validateSelector() {
+  if (!selectorText.value) return
+  send({
+    type: 'validate',
+    selector: selectorText.value,
+    selectorType: selectorType.value,
+  })
+}
+
+// 高亮数据源：validate 多元素优先；否则 select 单元素
+const highlights = computed(() => {
+  const list: { x: number; y: number; w: number; h: number }[] = []
+  if (validation.value?.elements?.length) {
+    for (const e of validation.value.elements) {
+      list.push({ x: e.x, y: e.y, w: e.width, h: e.height })
+    }
+  } else if (selection.value) {
+    list.push({
+      x: selection.value.x,
+      y: selection.value.y,
+      w: selection.value.width,
+      h: selection.value.height,
+    })
   }
+  return list
 })
 
 onMounted(connect)
@@ -108,20 +131,48 @@ onUnmounted(() => ws?.close())
     <div class="stage" tabindex="0" @keydown="onKeydown">
       <div class="frame-wrap">
         <img id="remote" :src="frameSrc" @click="onClick" @wheel="onWheel" alt="remote" />
-        <div v-if="selection" class="highlight" :style="highlightStyle"></div>
+        <div
+          v-for="(hl, i) in highlights"
+          :key="i"
+          class="highlight"
+          :style="{
+            left: (hl.x / REMOTE_W * 100) + '%',
+            top: (hl.y / REMOTE_H * 100) + '%',
+            width: (hl.w / REMOTE_W * 100) + '%',
+            height: (hl.h / REMOTE_H * 100) + '%',
+          }"
+        ></div>
       </div>
     </div>
     <div v-if="selection" class="selection-info">
-      {{ selection.tagName }}<span v-if="selection.id"> #{{ selection.id }}</span><span v-if="selection.className"> .{{ selection.className }}</span>
-      <span v-if="selection.text"> | {{ selection.text.substring(0, 60) }}</span>
+      <strong>{{ selection.tagName }}<span v-if="selection.id"> #{{ selection.id }}</span></strong>
+      <div v-if="selection.cssCandidates?.length">
+        <span class="label">CSS:</span> {{ selection.cssCandidates.join(', ') }}
+      </div>
+      <div v-if="selection.xpathCandidates?.length">
+        <span class="label">XPath:</span> {{ selection.xpathCandidates.join(', ') }}
+      </div>
+    </div>
+    <div class="manual">
+      <select v-model="selectorType">
+        <option value="css">CSS</option>
+        <option value="xpath">XPath</option>
+      </select>
+      <input v-model="selectorText" placeholder="选择器，如 #submit-btn" class="sel-input" />
+      <button @click="validateSelector">校验</button>
+      <span v-if="validation">
+        <span v-if="validation.valid" class="ok">匹配 {{ validation.count }} 个</span>
+        <span v-else class="error">语法错误：{{ validation.error }}</span>
+      </span>
     </div>
   </div>
 </template>
 
 <style>
 body { margin: 0; font-family: sans-serif; }
-.bar { display: flex; gap: 8px; padding: 8px; align-items: center; flex-wrap: wrap; }
+.bar, .manual { display: flex; gap: 8px; padding: 8px; align-items: center; flex-wrap: wrap; }
 .bar input { flex: 1; min-width: 200px; }
+.sel-input { flex: 1; min-width: 200px; padding: 4px; }
 .status { color: #555; font-size: 0.9em; }
 .stage { padding: 8px; outline: none; }
 .frame-wrap { position: relative; display: inline-block; width: 100%; max-width: 1280px; }
@@ -139,5 +190,9 @@ body { margin: 0; font-family: sans-serif; }
   box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.25);
   pointer-events: none;
 }
-.selection-info { padding: 8px; font-size: 0.85em; color: #333; background: #f5f5f5; }
+.selection-info { padding: 8px; font-size: 0.85em; background: #f5f5f5; border-top: 1px solid #ddd; }
+.selection-info .label { color: #888; margin-right: 4px; }
+.manual { border-top: 1px solid #ddd; background: #fafafa; }
+.ok { color: #080; font-weight: bold; }
+.error { color: #c00; font-weight: bold; }
 </style>

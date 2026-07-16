@@ -8,6 +8,7 @@ import java.util.concurrent.CompletionException;
  * <p>M0 spike：不做认证/所有权/每用户一会话限制（M2）；单会话独立非持久化 BrowserContext。
  * 输入命令按远程视口换算坐标、拒绝越界/过期；帧通道只留最新帧（丢旧）。
  * 选择模式（TYPE_SELECT）按坐标检查 DOM 元素，不触发原页面动作，不保存 ElementHandle。
+ * 手写选择器（TYPE_VALIDATE_SELECTOR）重新查询 DOM，不保存 ElementHandle。
  */
 public final class VisualSession implements AutoCloseable {
     private final String sessionId;
@@ -18,6 +19,7 @@ public final class VisualSession implements AutoCloseable {
     private final FrameProducer frameProducer;
     private FrameProducer.FrameHandle frameHandle;
     private volatile SelectionRecord selection;
+    private volatile ValidationResult validationResult;
 
     public VisualSession(String sessionId, String startUrl) {
         this.sessionId = sessionId;
@@ -94,6 +96,12 @@ public final class VisualSession implements AutoCloseable {
                     }
                     this.selection = control.inspectElement(r[0], r[1]).join();
                 }
+                case InputCommand.TYPE_VALIDATE_SELECTOR -> {
+                    if (cmd.selector() == null || cmd.selectorType() == null) {
+                        return false;
+                    }
+                    this.validationResult = control.validateSelector(cmd.selector(), cmd.selectorType()).join();
+                }
                 default -> {
                     return false;
                 }
@@ -117,7 +125,8 @@ public final class VisualSession implements AutoCloseable {
                 ViewportMapper.REMOTE_HEIGHT,
                 false,
                 null,
-                selection
+                selection,
+                validationResult
         )).join();
     }
 
