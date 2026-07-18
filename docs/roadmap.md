@@ -49,7 +49,7 @@ flowchart LR
 - 根据坐标检查 DOM 元素并高亮。
 - 生成候选 CSS/XPath；手写 CSS/XPath 后返回语法、匹配数和高亮。
 - 配置会话关闭、超时和 Chromium 异常退出后的资源回收。
-- Windows 和 Linux 各完成最小 smoke test。
+- Windows 最小 smoke test。Linux smoke 与真机 LAN 延迟验证延后到 M7（M0 决策：开发机仅 Windows、单机 localhost 基准，LAN RTT 相对 500ms 预算可忽略）。
 - 比较 Playwright `Page.screencast()` 与受控频率 `Page.screenshot()` 回退方案。
 
 ### 建议 AI 工单
@@ -64,13 +64,13 @@ flowchart LR
 
 ### 退出标准
 
-- 常见局域网条件下，点击或滚动后画面反馈的中位数约不超过 500ms。
+- 常见局域网条件下，点击或滚动后画面反馈的中位数约不超过 500ms。M0 以 localhost 基准度量（LAN RTT 相对 500ms 预算可忽略，作 LAN 代理）；真机 LAN 验证延后到 M7。
 - 页面缩放、浏览器窗口缩放和滚动后，点击位置仍能选中预期元素。
 - 中文输入、组合键、滚轮和页面导航可用。
 - 动态页面重新渲染后，选择器验证不会依赖陈旧 ElementHandle。
 - 至少 3 个并发实验会话运行 30 分钟，无无界帧队列或持续内存增长。
 - 关闭/超时/崩溃后没有遗留 Chromium 或 Playwright driver 进程。
-- Windows 与 Linux 都有可重复命令和实测结果。
+- Windows 有可重复命令和实测结果；Linux 可运行性与真机 LAN 验证延后到 M7 跨平台验收。
 - 记录每个会话的内存/CPU 估算，并据此确定配置会话全局上限和最低服务器规格。
 
 ### 不做
@@ -351,6 +351,7 @@ flowchart LR
 - 配置参考：数据库、端口、初始管理员、容量、保留天数和日志位置。
 - HTTP 可信 LAN/VPN 限制和禁止公网暴露警告。
 - 从全新环境执行安装与升级演练。
+- 真机局域网远程浏览延迟与 Linux 资源回收 smoke 验证（从 M0 延后）。
 - 单页、列表、翻页、加载更多、内容页、取消、中断、导出和权限的验收测试。
 - 修复阻断发布的问题，不新增范围外功能。
 
@@ -366,6 +367,7 @@ flowchart LR
 ### 退出标准
 
 - 全新 Windows 与 Linux 环境均能按文档完成安装、启动、登录和主链路采集。
+- 真机局域网条件下，远程配置会话点击/滚动反馈中位数约不超过 500ms（从 M0 延后）。
 - 单个 JAR 同时提供 Vue、REST 和 WebSocket，无 Nginx/Docker 依赖。
 - 数据库升级演练成功；失败 migration 有明确恢复步骤。
 - 所有首版验收项有自动化测试或可重复手工证据。
