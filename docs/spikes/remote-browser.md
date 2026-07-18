@@ -96,7 +96,7 @@
 | 项 | 状态 | 后续 |
 | --- | --- | --- |
 | **版本正式锁 + 兼容矩阵** | M0 用 JDK 21.0.11 / Spring Boot 3.4.13 / Playwright 1.61.0 / Vue 3.5 / Vite 6; 未做兼容性矩阵 | **M1** |
-| **模块产品化 (visualbrowser 抽取 adapter)** | spike 源集 `com.visualspider.spike.m0.*`; M2 提取正式模块 | **M1/M2** |
+| **模块产品化 (visualbrowser 抽取 adapter)** | M0.5 已完成：M0 spike 单包整体迁入 `com.visualspider.visualbrowser`（行为零变化重构）；M1 引入 `identity`/`task` 不会触碰到 visualbrowser 现有代码。M2 引入 PlaywrightVisualBrowserAdapter + 测试 adapter | **M2** |
 | **协议认证 / schemaVersion / 运行进度通道** | M0 无（spec 不做） | **M1/M2** |
 | **真机 LAN 远程浏览延迟** | localhost 验证; M0 仅做 LAN RTT 代理 | **M7** |
 | **Linux 可运行性 / Chromium headless on Linux** | M0 仅 Windows 验证 | **M7** |
@@ -135,7 +135,7 @@ mvn verify
 
 # 单 JAR 验证
 mvn package -DskipTests
-jar tf target/visual-spider5-0.0.1-SNAPSHOT.jar | grep -E "static/index|SpikeApplication.class"
+jar tf target/visual-spider5-0.0.1-SNAPSHOT.jar | grep -E "static/index|Application.class"
 
 # 启动
 ./mvnw spring-boot:run
@@ -154,3 +154,4 @@ pwsh -NoProfile -Command "Get-CimInstance Win32_Process |
 - **核心风险已关闭**: 线程亲和性、坐标无漂移、不保存陈旧 handle、进程回收、状态消息、协议层拒绝（越界/过期）、构建集成（单 JAR）
 - **决策门明确**: screencast 回退 screenshot（实测依据 #4.1）; lane 复用策略维持现状; 全局上限 3; 最低规格 4GB+4 核
 - **持续到 M1/M2/M6/M7 的清单见 §5 残余风险表**
+- **M0 spike 已落入 M0.5 `com.visualspider.visualbrowser` 模块**（行为零变化重构, 详见 `docs/specs/m0.5.md`）

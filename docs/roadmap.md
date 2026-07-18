@@ -8,7 +8,8 @@ M0–M5 产物只允许在开发环境和受控 fixture 上验证，不是可供
 
 ```mermaid
 flowchart LR
-    M0["M0<br/>远程浏览器可行性"] --> M1["M1<br/>工程与账号基础"]
+    M0["M0<br/>远程浏览器可行性"] --> M0_5["M0.5<br/>按业务模块重排"]
+    M0_5 --> M1["M1<br/>工程与账号基础"]
     M1 --> M2["M2<br/>单页配置与预览"]
     M2 --> M3["M3<br/>单页运行与导出"]
     M3 --> M4["M4<br/>列表识别"]
@@ -77,7 +78,42 @@ flowchart LR
 
 账号、数据库、正式任务模型、结果导出、列表识别和生产级 UI。实验代码只有通过代码质量检查后才能复用；否则允许丢弃。
 
-## 4. M1：工程骨架、账号与任务基础
+## 4. M0.5：按业务模块重排 M0 spike 代码
+
+### 目标
+
+把 M0 spike 集中在 spike 单包（原 spike 包前缀为项目早期 M0 阶段临时实验命名）的 19 个生产类与 12 个测试类，重排到 ADR-0003 规定的 `com.visualspider.<module>` 业务模块结构，为 M1 引入 `identity` 与 `task` 模块隔离重排与新功能两层行为变化，把回归风险收敛在 seam。
+
+### 范围
+
+- 顶层 `com.visualspider.Application`（由 M0 spike 启动类改名升顶层）；`@SpringBootApplication` 默认扫描 `com.visualspider.*`，M1+ 不需修改扫描配置。
+- 6 个业务模块占位包：`identity` / `task` / `extraction` / `run` / `result` / `shared`，每个挂 `package-info.java` 写明模块边界、启用里程碑与"仅通过稳定 interface 对外暴露能力"约束。
+- 18 个 spike 生产类 + 12 个 spike 测试类一对一迁入 `com.visualspider.visualbrowser.*`，旧 spike 单包清空。
+- 行为零变化：所有 12 个测试原样迁移后 `./mvnw clean verify` 全绿。
+- 文档同步：`docs/specs/m0.5.md` 与 `docs/spikes/remote-browser.md` 末尾收尾；roadmap 本节增补。
+
+### 建议 AI 工单
+
+1. T1（expand）：建 7 个新包 + `package-info.java`，把 M0 spike 启动类改名升顶层；旧 spike 单包 18 + 12 文件一行不动。
+2. T2（contract）：把 18 + 12 个 spike 文件搬到 `com.visualspider.visualbrowser`，清空旧 spike 单包；`git grep -l "com\.visualspider\.spike\.m0"` 全仓库 0 命中。
+
+> 拆票原因：M0.5 是 wide refactor（30 文件 import 一次断裂，无中间 CI 绿态），按 expand-contract 例外路径拆为 2 张工单。T1 独立绿（仅新建包 + 启动类升顶层），T2 完成时整 PR 才绿。
+
+### 退出标准
+
+- `./mvnw clean verify` 全绿（22 单测 + 13 IT，1 个 screencast IT 保持 `@Disabled` 状态，与重构前等价）。
+- 旧 spike 单包 `git ls-files` 在 main / test 下均 0 命中。
+- `git ls-files src/main/java/com/visualspider/visualbrowser/` 命中 18 个生产类；`src/main/java/com/visualspider/Application.java` 单独存在。
+- `git grep -l "com\.visualspider\.spike\.m0"` 全仓库（main / test / pom / docs）0 命中。
+- 19 个生产类中**只有 M0 spike 启动类改名 `Application`**，其余 18 个类名不变。
+- 12 个测试类的 `@Disabled` 状态、断言、fixture 路径全部保持原样。
+- `./mvnw clean package` 产出可执行 JAR；`java -jar` 启动成功（不依赖 DB）。
+
+### 不做
+
+引入 PostgreSQL / Flyway / 任何持久化层；引入 ArchUnit 或新 lint；引入稳定 interface / port / adapter；重构任何类的内部逻辑；解决 M0 决策门遗留（`ScreencastFrameProducerIT` 保持 `@Disabled`）；引入新依赖（pom.xml 不动）；拆分 Maven 子模块；移动 `src/test/resources/fixtures/`；新增业务功能（首个有效功能是 M1）；跑 30 分钟长跑压测（已明确延后到 M6）。
+
+## 5. M1：工程骨架、账号与任务基础
 
 ### 目标
 
@@ -119,7 +155,7 @@ flowchart LR
 
 远程浏览器产品化、字段配置、预览、正式运行和导出。
 
-## 5. M2：单页可视化配置与预览
+## 6. M2：单页可视化配置与预览
 
 ### 目标
 
@@ -163,7 +199,7 @@ flowchart LR
 
 正式运行、运行历史、列表项推断、翻页、内容页和导出。
 
-## 6. M3：单页运行、结果与导出
+## 7. M3：单页运行、结果与导出
 
 ### 目标
 
@@ -207,7 +243,7 @@ flowchart LR
 
 列表、翻页、内容页、去重和跨运行增量。
 
-## 7. M4：列表识别与单页列表采集
+## 8. M4：列表识别与单页列表采集
 
 ### 目标
 
@@ -248,7 +284,7 @@ flowchart LR
 
 下一页、加载更多、内容页、无限滚动和多级数据结构。
 
-## 8. M5：翻页、加载更多与一层内容页
+## 9. M5：翻页、加载更多与一层内容页
 
 ### 目标
 
@@ -291,7 +327,7 @@ flowchart LR
 
 纯无限滚动、复杂点击导航、多级内容页、目标登录态和自定义 JavaScript。
 
-## 9. M6：安全、资源与可靠性加固
+## 10. M6：安全、资源与可靠性加固
 
 ### 目标
 
@@ -336,7 +372,7 @@ flowchart LR
 
 操作系统防火墙自动配置、HTTPS、公共互联网暴露、分布式 Worker 或多实例高可用。
 
-## 10. M7：Windows/Linux 首版发布与验收
+## 11. M7：Windows/Linux 首版发布与验收
 
 ### 目标
 
@@ -378,7 +414,7 @@ flowchart LR
 
 在发布阶段加入新产品能力。任何新增需求进入首版之后的候选列表。
 
-## 11. 首版后的候选方向
+## 12. 首版后的候选方向
 
 以下能力不应提前混入 M0–M7，应在首版运行数据和真实用户反馈后重新排序：
 
@@ -395,7 +431,7 @@ flowchart LR
 
 其中登录态、代理、反检测和公共 SaaS 会改变安全边界，必须重新进行 grilling 和 ADR 评估，不能作为普通小功能追加。
 
-## 12. 后续 AI Coding 工作方式
+## 13. 后续 AI Coding 工作方式
 
 准备启动一个里程碑时，再根据“建议 AI 工单”创建 GitHub Issues。每个 issue 应满足：
 
