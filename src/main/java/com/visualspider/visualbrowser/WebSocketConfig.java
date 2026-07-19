@@ -21,7 +21,9 @@ public class WebSocketConfig implements WebSocketConfigurer {
 
     @Override
     public void registerWebSocketHandlers(WebSocketHandlerRegistry registry) {
-        registry.addHandler(endpoint, "/ws/visual").setAllowedOrigins("*");
+        // M1-1: setAllowedOrigins 不带参数即同源 only（M1 spec §D6）。
+        // vite dev 5173 → 8080 仍由 vite.config.ts 的 /ws proxy 覆盖；REST 走同源部署。
+        registry.addHandler(endpoint, "/ws/visual").setAllowedOrigins();
     }
 
     /** 增大 WebSocket 消息缓冲，容纳 JPEG 帧（Tomcat 默认 8KB 不足）。 */

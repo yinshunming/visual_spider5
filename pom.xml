@@ -15,15 +15,16 @@
     <artifactId>visual-spider5</artifactId>
     <version>0.0.1-SNAPSHOT</version>
     <name>visual-spider5</name>
-    <description>可视化网页采集 - M0 远程浏览器技术验证 spike</description>
+    <description>可视化网页采集 - 私有部署首版</description>
 
     <properties>
         <java.version>21</java.version>
         <playwright.version>1.61.0</playwright.version>
+        <flyway.version>10.20.1</flyway.version>
     </properties>
 
     <dependencies>
-        <!-- M0 只需 Spring Boot 进程宿主；REST/WebSocket/前端留到 M0-2/M0-3 -->
+        <!-- M0 只需 Spring Boot 进程宿主；M1 起增加 Web/Security/JDBC/Flyway/Actuator -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter</artifactId>
@@ -31,7 +32,48 @@
 
         <dependency>
             <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-web</artifactId>
+        </dependency>
+
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-websocket</artifactId>
+        </dependency>
+
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-security</artifactId>
+        </dependency>
+
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-jdbc</artifactId>
+        </dependency>
+
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-validation</artifactId>
+        </dependency>
+
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-actuator</artifactId>
+        </dependency>
+
+        <dependency>
+            <groupId>org.flywaydb</groupId>
+            <artifactId>flyway-core</artifactId>
+        </dependency>
+
+        <dependency>
+            <groupId>org.flywaydb</groupId>
+            <artifactId>flyway-database-postgresql</artifactId>
+        </dependency>
+
+        <dependency>
+            <groupId>org.postgresql</groupId>
+            <artifactId>postgresql</artifactId>
+            <scope>runtime</scope>
         </dependency>
 
         <dependency>
@@ -45,6 +87,12 @@
             <artifactId>spring-boot-starter-test</artifactId>
             <scope>test</scope>
         </dependency>
+
+        <dependency>
+            <groupId>org.springframework.security</groupId>
+            <artifactId>spring-security-test</artifactId>
+            <scope>test</scope>
+        </dependency>
     </dependencies>
 
     <build>
@@ -54,7 +102,7 @@
                 <artifactId>spring-boot-maven-plugin</artifactId>
             </plugin>
 
-            <!-- 真实 Chromium 集成测试用 *IT 命名，mvn verify 才执行；mvn test 只跑无 Chromium 的单元测试 -->
+            <!-- 真实 Chromium / PG 集成测试用 *IT 命名，mvn verify 才执行；mvn test 只跑无外部依赖的单元测试 -->
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-failsafe-plugin</artifactId>
@@ -66,6 +114,9 @@
                         </goals>
                     </execution>
                 </executions>
+                <configuration>
+                    <skipITs>${skipITs}</skipITs>
+                </configuration>
             </plugin>
 
             <!-- 提供 mvn exec:java -Dexec.args="install chromium" 安装浏览器二进制 -->
@@ -121,4 +172,34 @@
             </plugin>
         </plugins>
     </build>
+
+    <profiles>
+        <!--
+          pg-it：仅在显式启用时才执行 *IT；PG DSN 通过 -Dpg.it.url / -Dpg.it.username / -Dpg.it.password 或同名环境变量提供。
+          未提供 DSN 时 failsafe 跳过并日志说明，不静默成功（架构 §9.2）。
+        -->
+        <profile>
+            <id>pg-it</id>
+            <properties>
+                <skipITs>false</skipITs>
+            </properties>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-failsafe-plugin</artifactId>
+                        <configuration>
+                            <skipITs>${skipITs}</skipITs>
+                            <systemPropertyVariables>
+                                <pg.it.url>${pg.it.url}</pg.it.url>
+                                <pg.it.username>${pg.it.username}</pg.it.username>
+                                <pg.it.password>${pg.it.password}</pg.it.password>
+                                <spring.profiles.active>it</spring.profiles.active>
+                            </systemPropertyVariables>
+                        </configuration>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+    </profiles>
 </project>

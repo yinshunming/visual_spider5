@@ -1,0 +1,14 @@
+# Integration test profile — 真实 PG 跑 IT 时由 failsafe 注入 spring.profiles.active=it
+# DSN 由 system property 提供：-Dpg.it.url=jdbc:postgresql://...
+spring:
+  datasource:
+    url: ${pg.it.url}
+    username: ${pg.it.username}
+    password: ${pg.it.password}
+  flyway:
+    enabled: true
+    clean-disabled: false
+
+logging:
+  level:
+    org.flywaydb: INFO
