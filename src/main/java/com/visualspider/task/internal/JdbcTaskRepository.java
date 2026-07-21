@@ -9,12 +9,13 @@ import com.visualspider.task.domain.TaskStatus;
 import com.visualspider.task.domain.TaskSummary;
 import com.visualspider.task.spi.TaskRepository;
 import java.sql.PreparedStatement;
-import java.sql.Statement;
 import java.sql.Timestamp;
+import java.sql.Types;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Optional;
+import org.postgresql.util.PGobject;
 import org.springframework.dao.EmptyResultDataAccessException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
@@ -80,24 +81,19 @@ public class JdbcTaskRepository implements TaskRepository {
 
     @Override
     public long insert(long ownerId, String name, TaskDefinition definition) {
-        String json;
-        try {
-            json = objectMapper.writeValueAsString(definition);
-        } catch (JsonProcessingException e) {
-            throw new IllegalArgumentException("definition 序列化失败", e);
-        }
+        PGobject jsonb = toJsonb(definition);
         KeyHolder kh = new GeneratedKeyHolder();
         jdbc.update(connection -> {
             PreparedStatement ps = connection.prepareStatement(
                     "INSERT INTO collection_task (owner_id, name, mode, status, schema_version, definition, version) "
-                            + "VALUES (?, ?, ?, ?, ?, ?, 0)",
-                    Statement.RETURN_GENERATED_KEYS);
+                            + "VALUES (?, ?, ?, ?, ?, ?::jsonb, 0)",
+                    new String[]{"id"});
             ps.setLong(1, ownerId);
             ps.setString(2, name);
             ps.setString(3, writeMode(definition.mode()));
             ps.setString(4, TaskStatus.DRAFT.name());
             ps.setInt(5, CURRENT_SCHEMA_VERSION);
-            ps.setString(6, json);
+            ps.setObject(6, jsonb);
             return ps;
         }, kh);
         Number key = kh.getKey();
@@ -135,17 +131,12 @@ public class JdbcTaskRepository implements TaskRepository {
 
     @Override
     public boolean updateDraft(long id, TaskDefinition definition, long expectedVersion) {
-        String json;
-        try {
-            json = objectMapper.writeValueAsString(definition);
-        } catch (JsonProcessingException e) {
-            throw new IllegalArgumentException("definition 序列化失败", e);
-        }
+        PGobject jsonb = toJsonb(definition);
         int rows = jdbc.update(
-                "UPDATE collection_task SET definition = ?, mode = ?, schema_version = ?, "
+                "UPDATE collection_task SET definition = ?::jsonb, mode = ?, schema_version = ?, "
                         + "version = version + 1, updated_at = now() "
                         + "WHERE id = ? AND version = ?",
-                json, writeMode(definition.mode()), CURRENT_SCHEMA_VERSION, id, expectedVersion);
+                jsonb, writeMode(definition.mode()), CURRENT_SCHEMA_VERSION, id, expectedVersion);
         return rows == 1;
     }
 
@@ -155,5 +146,22 @@ public class JdbcTaskRepository implements TaskRepository {
                 "DELETE FROM collection_task WHERE id = ? AND owner_id = ?",
                 id, expectedOwnerId);
         return rows == 1;
+    }
+
+    private PGobject toJsonb(TaskDefinition definition) {
+        String json;
+        try {
+            json = objectMapper.writeValueAsString(definition);
+        } catch (JsonProcessingException e) {
+            throw new IllegalArgumentException("definition 序列化失败", e);
+        }
+        PGobject obj = new PGobject();
+        obj.setType("jsonb");
+        try {
+            obj.setValue(json);
+        } catch (java.sql.SQLException e) {
+            throw new IllegalArgumentException("PGobject setValue 失败", e);
+        }
+        return obj;
     }
 }

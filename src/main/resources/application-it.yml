@@ -1,5 +1,9 @@
-# Integration test profile — 真实 PG 跑 IT 时由 failsafe 注入 spring.profiles.active=it
+# Integration test profile — 真实 PG 跑 IT 时由各测试类 @ActiveProfiles("it") 显式激活
 # DSN 由 system property 提供：-Dpg.it.url=jdbc:postgresql://...
+#
+# 重要：必须 baseline-on-migrate=true；本机 PG 的 public schema 已有默认表（pg_catalog）
+# 不允许 drop，否则破坏 PG 自身状态。Flyway 10.x 在 baseline-on-migrate=true 下
+# 会自动给现有 public schema 写入 flyway_schema_history 表并从 V1 开始。
 spring:
   datasource:
     url: ${pg.it.url}
@@ -8,6 +12,9 @@ spring:
   flyway:
     enabled: true
     clean-disabled: false
+    baseline-on-migrate: true
+    schemas: ${pg.it.schemas:public}
+    default-schema: ${pg.it.schemas:public}
 
 logging:
   level:

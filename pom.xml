@@ -73,7 +73,6 @@
         <dependency>
             <groupId>org.postgresql</groupId>
             <artifactId>postgresql</artifactId>
-            <scope>runtime</scope>
         </dependency>
 
         <dependency>
@@ -102,7 +101,19 @@
                 <artifactId>spring-boot-maven-plugin</artifactId>
             </plugin>
 
-            <!-- 真实 Chromium / PG 集成测试用 *IT 命名，mvn verify 才执行；mvn test 只跑无外部依赖的单元测试 -->
+            <!-- 单元测试：只跑 *Test.java（不跑 *IT.java）；*IT 由 failsafe 接管 -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <configuration>
+                    <excludes>
+                        <exclude>**/*IT.java</exclude>
+                        <exclude>**/*ITCase.java</exclude>
+                    </excludes>
+                </configuration>
+            </plugin>
+
+            <!-- 集成测试：*IT.java；mvn verify 才执行；mvn test 只跑单元测试 -->
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-failsafe-plugin</artifactId>
@@ -194,7 +205,7 @@
                                 <pg.it.url>${pg.it.url}</pg.it.url>
                                 <pg.it.username>${pg.it.username}</pg.it.username>
                                 <pg.it.password>${pg.it.password}</pg.it.password>
-                                <spring.profiles.active>it</spring.profiles.active>
+                                <pg.it.schemas>${pg.it.schemas}</pg.it.schemas>
                             </systemPropertyVariables>
                         </configuration>
                     </plugin>

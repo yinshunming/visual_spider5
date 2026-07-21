@@ -13,7 +13,6 @@ import org.springframework.jdbc.support.KeyHolder;
 import org.springframework.stereotype.Repository;
 
 import java.sql.PreparedStatement;
-import java.sql.Statement;
 import java.util.Optional;
 
 /**
@@ -79,7 +78,7 @@ public class JdbcAppUserRepository implements AppUserRepository {
         jdbc.update(connection -> {
             PreparedStatement ps = connection.prepareStatement(
                     "INSERT INTO app_user (username, password_hash, role, status) VALUES (?, ?, ?, ?)",
-                    Statement.RETURN_GENERATED_KEYS);
+                    new String[]{"id"});
             ps.setString(1, username);
             ps.setString(2, passwordHash);
             ps.setString(3, role instanceof ActorRole.Admin ? "ADMIN" : "COLLECTOR");

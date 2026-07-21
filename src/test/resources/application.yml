@@ -1,5 +1,12 @@
 # Test profile 默认配置：注入合法 seed.admin 凭据，让已有 VisualBrowserIT 等 SpringBootTest
 # 能加载 ApplicationContext。生产部署不读这个文件（test classpath 优先）。
+#
+# 默认（无 it profile）：
+#   - Flyway 关闭（避免无 DB 时阻塞 ApplicationContext）
+#   - Hikari initialization-fail-timeout=-1 让连接池延迟到第一次获取连接才尝试
+#   - 已有 VisualBrowserIT 等不需要 DB 也能加载
+#
+# @ActiveProfiles("it") 时：application-it.yml 接管，Flyway 启用 + 真实 PG DSN。
 seed:
   admin:
     username: test-admin
@@ -11,9 +18,6 @@ skipITs: true
 spring:
   flyway:
     enabled: false
-  # 测试 classpath 使用 PG URL 但不实际连接；
-  # Hikari initialization-fail-timeout=-1 让连接池延迟到第一次获取连接才尝试。
-  # 已有 VisualBrowserIT 等不需要 DB；M1-2/M1-3 写新 IT 时再用 @AutoConfigureTestDatabase 单独启用。
   datasource:
     url: jdbc:postgresql://localhost:5432/visualspider_test
     username: visualspider
