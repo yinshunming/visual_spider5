@@ -3,11 +3,14 @@ package com.visualspider.visualbrowser.api;
 import com.visualspider.identity.domain.ActorId;
 import com.visualspider.identity.spi.IdentityAccess;
 import com.visualspider.task.spi.TaskCatalog;
+import com.visualspider.visualbrowser.internal.SelectorValidationService;
 import com.visualspider.visualbrowser.internal.TaskNotOpenableException;
 import com.visualspider.visualbrowser.spi.VisualSession;
 import com.visualspider.visualbrowser.spi.VisualSessionManager;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Positive;
+import java.util.ArrayList;
+import java.util.List;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -31,13 +34,16 @@ public class VisualSessionController {
     private final IdentityAccess identityAccess;
     private final VisualSessionManager manager;
     private final TaskCatalog taskCatalog;
+    private final SelectorValidationService selectorValidationService;
 
     public VisualSessionController(IdentityAccess identityAccess,
                                    VisualSessionManager manager,
-                                   TaskCatalog taskCatalog) {
+                                   TaskCatalog taskCatalog,
+                                   SelectorValidationService selectorValidationService) {
         this.identityAccess = identityAccess;
         this.manager = manager;
         this.taskCatalog = taskCatalog;
+        this.selectorValidationService = selectorValidationService;
     }
 
     @PostMapping
@@ -73,6 +79,34 @@ public class VisualSessionController {
         ActorId actor = identityAccess.currentActor();
         manager.close(sessionId, actor, "USER_CLOSE");
         return ResponseEntity.noContent().build();
+    }
+
+    @PostMapping("/{sessionId}/selectors/validate")
+    public ValidateSelectorsResponse validateSelectors(@PathVariable @NotNull String sessionId,
+                                                       @RequestBody ValidateSelectorsRequest request) {
+        ActorId actor = identityAccess.currentActor();
+        // 校验所有权
+        VisualSession owned = manager.requireOwnedBy(sessionId, actor);
+        if (owned.lifecycle() == com.visualspider.visualbrowser.spi.SessionLifecycleState.CLOSED) {
+            throw new com.visualspider.visualbrowser.internal.VisualSessionNotFoundException(sessionId);
+        }
+        List<ValidateSelectorsResponse.SelectorOutcome> outcomes = new ArrayList<>();
+        for (ValidateSelectorsRequest.SelectorEntry entry : request.selectors()) {
+            String type = entry.type() == null ? "css" : entry.type();
+            try {
+                var result = selectorValidationService.validateOne(entry.selector(), type);
+                outcomes.add(new ValidateSelectorsResponse.SelectorOutcome(
+                        entry.selector(), type, result.valid(),
+                        result.count(),
+                        result.error(),
+                        result.elements()));
+            } catch (com.visualspider.visualbrowser.internal.InvalidSelectorException ex) {
+                outcomes.add(new ValidateSelectorsResponse.SelectorOutcome(
+                        entry.selector(), type, false, 0,
+                        ex.getMessage(), List.of()));
+            }
+        }
+        return new ValidateSelectorsResponse(outcomes);
     }
 
     public record OpenRequest(@Positive long taskId) {}

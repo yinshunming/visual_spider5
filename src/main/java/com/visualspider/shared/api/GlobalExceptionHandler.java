@@ -9,6 +9,7 @@ import com.visualspider.task.domain.exceptions.StaleTaskVersionException;
 import com.visualspider.task.domain.exceptions.TaskInvalidDefinitionException;
 import com.visualspider.task.domain.exceptions.TaskNotFoundException;
 import com.visualspider.visualbrowser.internal.ConfigLaneFullException;
+import com.visualspider.visualbrowser.internal.InvalidSelectorException;
 import com.visualspider.visualbrowser.internal.VisualSessionNotFoundException;
 import com.visualspider.visualbrowser.internal.VisualSessionNotOwnerException;
 import jakarta.validation.ConstraintViolationException;
@@ -96,6 +97,13 @@ public class GlobalExceptionHandler {
         };
         return ResponseEntity.status(HttpStatus.BAD_REQUEST)
                 .body(ApiError.of(mapped, first.message(), first.fieldPath()));
+    }
+
+    @ExceptionHandler(InvalidSelectorException.class)
+    public ResponseEntity<ApiError> handleInvalidSelector(InvalidSelectorException ex) {
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                .body(ApiError.of(BusinessErrorCode.TASK_INVALID_SELECTOR, ex.getMessage(),
+                        ex.kind()));
     }
 
     @ExceptionHandler(UserNotFoundException.class)
