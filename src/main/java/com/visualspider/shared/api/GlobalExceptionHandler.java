@@ -9,6 +9,7 @@ import com.visualspider.task.domain.exceptions.StaleTaskVersionException;
 import com.visualspider.task.domain.exceptions.TaskInvalidDefinitionException;
 import com.visualspider.task.domain.exceptions.TaskNotFoundException;
 import com.visualspider.visualbrowser.internal.ConfigLaneFullException;
+import com.visualspider.visualbrowser.internal.EditingBuffer;
 import com.visualspider.visualbrowser.internal.InvalidSelectorException;
 import com.visualspider.visualbrowser.internal.VisualSessionNotFoundException;
 import com.visualspider.visualbrowser.internal.VisualSessionNotOwnerException;
@@ -97,6 +98,13 @@ public class GlobalExceptionHandler {
         };
         return ResponseEntity.status(HttpStatus.BAD_REQUEST)
                 .body(ApiError.of(mapped, first.message(), first.fieldPath()));
+    }
+
+    @ExceptionHandler(EditingBuffer.EditBufferConflictException.class)
+    public ResponseEntity<ApiError> handleEditBufferConflict(EditingBuffer.EditBufferConflictException ex) {
+        LOG.info("edit buffer conflict: {}", ex.getMessage());
+        return ResponseEntity.status(HttpStatus.CONFLICT)
+                .body(ApiError.of(BusinessErrorCode.EDIT_BUFFER_CONFLICT));
     }
 
     @ExceptionHandler(InvalidSelectorException.class)

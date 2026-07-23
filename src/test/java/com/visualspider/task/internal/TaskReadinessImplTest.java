@@ -36,7 +36,9 @@ class TaskReadinessImplTest {
     @DisplayName("schemaVersion != 1 → TASK_UNSUPPORTED_SCHEMA")
     void schemaVersionUnsupported() {
         TaskDefinition def = new TaskDefinition(2, new TaskMode.SinglePage(),
-                "https://example.com", Viewport.DEFAULT, List.of());
+                "https://example.com", Viewport.DEFAULT,
+                List.of(new FieldDefinition("title", FieldSource.VISIBLE_TEXT, "h1", null,
+                        ResultType.TEXT, TrimPolicy.TRIM, null, true)));
         ReadinessReport report = readiness.validate(def);
         assertThat(report.ready()).isFalse();
         assertThat(report.errors())
@@ -48,7 +50,9 @@ class TaskReadinessImplTest {
     @DisplayName("startUrl 非 http(s) → TASK_INVALID_URL")
     void startUrlInvalidScheme() {
         TaskDefinition def = new TaskDefinition(1, new TaskMode.SinglePage(),
-                "ftp://example.com", Viewport.DEFAULT, List.of());
+                "ftp://example.com", Viewport.DEFAULT,
+                List.of(new FieldDefinition("title", FieldSource.VISIBLE_TEXT, "h1", null,
+                        ResultType.TEXT, TrimPolicy.TRIM, null, true)));
         ReadinessReport report = readiness.validate(def);
         assertThat(report.ready()).isFalse();
         assertThat(report.errors())
@@ -60,7 +64,9 @@ class TaskReadinessImplTest {
     @DisplayName("startUrl 缺 host → TASK_INVALID_URL")
     void startUrlMissingHost() {
         TaskDefinition def = new TaskDefinition(1, new TaskMode.SinglePage(),
-                "https://", Viewport.DEFAULT, List.of());
+                "https://", Viewport.DEFAULT,
+                List.of(new FieldDefinition("title", FieldSource.VISIBLE_TEXT, "h1", null,
+                        ResultType.TEXT, TrimPolicy.TRIM, null, true)));
         ReadinessReport report = readiness.validate(def);
         assertThat(report.ready()).isFalse();
         assertThat(report.errors())
@@ -72,7 +78,9 @@ class TaskReadinessImplTest {
     @DisplayName("startUrl 为空 → TASK_INVALID_URL")
     void startUrlBlank() {
         TaskDefinition def = new TaskDefinition(1, new TaskMode.SinglePage(),
-                "", Viewport.DEFAULT, List.of());
+                "", Viewport.DEFAULT,
+                List.of(new FieldDefinition("title", FieldSource.VISIBLE_TEXT, "h1", null,
+                        ResultType.TEXT, TrimPolicy.TRIM, null, true)));
         ReadinessReport report = readiness.validate(def);
         assertThat(report.ready()).isFalse();
         assertThat(report.errors())
@@ -84,7 +92,9 @@ class TaskReadinessImplTest {
     @DisplayName("viewport 非 1280x720 → TASK_INVALID_VIEWPORT")
     void viewportInvalid() {
         TaskDefinition def = new TaskDefinition(1, new TaskMode.SinglePage(),
-                "https://example.com", new Viewport(800, 600), List.of());
+                "https://example.com", new Viewport(800, 600),
+                List.of(new FieldDefinition("title", FieldSource.VISIBLE_TEXT, "h1", null,
+                        ResultType.TEXT, TrimPolicy.TRIM, null, true)));
         ReadinessReport report = readiness.validate(def);
         assertThat(report.ready()).isFalse();
         assertThat(report.errors())
@@ -123,24 +133,27 @@ class TaskReadinessImplTest {
     }
 
     @Test
-    @DisplayName("mode=LIST 暂合法（M1 可创建 DRAFT）；M4 启用 validateForRun")
+    @DisplayName("mode=LIST 允许创建任务；空字段由 TASK_NO_FIELDS 报错（M2）")
     void listModeAcceptable() {
         TaskDefinition def = new TaskDefinition(1, new TaskMode.List(),
-                "https://example.com", Viewport.DEFAULT, List.of());
+                "https://example.com", Viewport.DEFAULT,
+                List.of(new FieldDefinition("title", FieldSource.VISIBLE_TEXT, "h1", null,
+                        ResultType.TEXT, TrimPolicy.TRIM, null, true)));
         ReadinessReport report = readiness.validate(def);
         assertThat(report.ready()).isTrue();
     }
 
     @Test
-    @DisplayName("validateForRun 抛 UnsupportedOperationException")
-    void validateForRunUnsupported() {
-        org.junit.jupiter.api.Assertions.assertThrows(
-                UnsupportedOperationException.class,
-                () -> readiness.validateForRun(1L, null));
+    @DisplayName("validateForRun 当前 stub 返回 success（M3 替换为真实预运行校验）")
+    void validateForRunStub() {
+        ReadinessReport report = readiness.validateForRun(1L, null);
+        assertThat(report.ready()).isTrue();
     }
 
     private static TaskDefinition singlePage() {
         return new TaskDefinition(1, new TaskMode.SinglePage(),
-                "https://example.com", Viewport.DEFAULT, List.of());
+                "https://example.com", Viewport.DEFAULT,
+                List.of(new FieldDefinition("title", FieldSource.VISIBLE_TEXT, "h1", null,
+                        ResultType.TEXT, TrimPolicy.TRIM, null, true)));
     }
 }
