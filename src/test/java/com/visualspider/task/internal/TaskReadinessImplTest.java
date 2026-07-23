@@ -95,9 +95,9 @@ class TaskReadinessImplTest {
     @Test
     @DisplayName("field name 重复 → TASK_DUPLICATE_FIELD")
     void fieldNameDuplicate() {
-        FieldDefinition f1 = new FieldDefinition("title", FieldSource.TEXT, "h1", null,
+        FieldDefinition f1 = new FieldDefinition("title", FieldSource.VISIBLE_TEXT, "h1", null,
                 ResultType.TEXT, TrimPolicy.TRIM, null, true);
-        FieldDefinition f2 = new FieldDefinition("title", FieldSource.TEXT, ".body", null,
+        FieldDefinition f2 = new FieldDefinition("title", FieldSource.VISIBLE_TEXT, ".body", null,
                 ResultType.TEXT, TrimPolicy.TRIM, null, false);
         TaskDefinition def = new TaskDefinition(1, new TaskMode.SinglePage(),
                 "https://example.com", Viewport.DEFAULT, List.of(f1, f2));
@@ -111,7 +111,7 @@ class TaskReadinessImplTest {
     @Test
     @DisplayName("field name 为空 → TASK_INVALID_FIELD_NAME")
     void fieldNameBlank() {
-        FieldDefinition f = new FieldDefinition("", FieldSource.TEXT, "h1", null,
+        FieldDefinition f = new FieldDefinition("", FieldSource.VISIBLE_TEXT, "h1", null,
                 ResultType.TEXT, TrimPolicy.TRIM, null, true);
         TaskDefinition def = new TaskDefinition(1, new TaskMode.SinglePage(),
                 "https://example.com", Viewport.DEFAULT, List.of(f));
