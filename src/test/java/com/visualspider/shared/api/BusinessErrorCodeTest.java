@@ -43,4 +43,32 @@ class BusinessErrorCodeTest {
         assertThat(BusinessErrorCode.TASK_STALE_VERSION.httpStatus()).isEqualTo(409);
         assertThat(BusinessErrorCode.TASK_STALE_VERSION.code()).isEqualTo("TASK_STALE_VERSION");
     }
+
+    @Test
+    @DisplayName("SESSION_NOT_FOUND 是 404")
+    void sessionNotFoundIs404() {
+        assertThat(BusinessErrorCode.SESSION_NOT_FOUND.httpStatus()).isEqualTo(404);
+        assertThat(BusinessErrorCode.SESSION_NOT_FOUND.code()).isEqualTo("SESSION_NOT_FOUND");
+    }
+
+    @Test
+    @DisplayName("SESSION_NOT_OWNER 是 403")
+    void sessionNotOwnerIs403() {
+        assertThat(BusinessErrorCode.SESSION_NOT_OWNER.httpStatus()).isEqualTo(403);
+        assertThat(BusinessErrorCode.SESSION_NOT_OWNER.code()).isEqualTo("SESSION_NOT_OWNER");
+    }
+
+    @Test
+    @DisplayName("CONFIG_LANE_FULL 是 409")
+    void configLaneFullIs409() {
+        assertThat(BusinessErrorCode.CONFIG_LANE_FULL.httpStatus()).isEqualTo(409);
+        assertThat(BusinessErrorCode.CONFIG_LANE_FULL.code()).isEqualTo("CONFIG_LANE_FULL");
+    }
+
+    @Test
+    @DisplayName("TASK_NOT_DRAFT 是 409")
+    void taskNotDraftIs409() {
+        assertThat(BusinessErrorCode.TASK_NOT_DRAFT.httpStatus()).isEqualTo(409);
+        assertThat(BusinessErrorCode.TASK_NOT_DRAFT.code()).isEqualTo("TASK_NOT_DRAFT");
+    }
 }

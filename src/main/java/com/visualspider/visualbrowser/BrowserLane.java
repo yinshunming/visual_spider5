@@ -114,6 +114,15 @@ public final class BrowserLane implements AutoCloseable {
         }
     }
 
+
+    /**
+     * 测试用工厂：创建无 Chromium 的 lane（{@code initializer} 返回 null 时不分配 Playwright 资源）。
+     * 用于 {@code ConfigLanePoolTest} 等不依赖真实浏览器的测试。
+     */
+    public static BrowserLane forTest() {
+        return new BrowserLane(() -> null);
+    }
+
     private void dispose() {
         if (resources != null) {
             resources.close();
@@ -150,7 +159,7 @@ public final class BrowserLane implements AutoCloseable {
     }
 
     /** lane 线程名，供测试断言线程亲和性。 */
-    String laneThreadName() {
+    public String laneThreadName() {
         return laneThread.getName();
     }
 

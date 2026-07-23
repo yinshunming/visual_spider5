@@ -12,6 +12,9 @@ import java.util.regex.Pattern;
  *   <li>{@code Authorization:\s*\S+} → {@code Authorization: ***}</li>
  *   <li>{@code Set-Cookie:\s*\S+} → {@code Set-Cookie: ***}</li>
  *   <li>{@code XSRF-TOKEN\s*=\s*\S+} → {@code XSRF-TOKEN=***}</li>
+ *   <li>{@code ?csrf=...} 或 {@code &csrf=...} (query 中) → {@code csrf=***}</li>
+ *   <li>{@code ?token=...} 或 {@code &token=...} (query 中) → {@code token=***}</li>
+
  *   <li>JSONB 内 {@code "password": "..."} → {@code "password": "***"}</li>
  *   <li>JSONB 内 {@code "token": "..."} → {@code "token": "***"}</li>
  * </ul>
@@ -29,6 +32,11 @@ public final class LoggingScrubber {
             "(?i)\\bSet-Cookie:\\s*\\S+");
     private static final Pattern XSRF_TOKEN = Pattern.compile(
             "(?i)\\bXSRF-TOKEN\\s*=\\s*\\S+");
+private static final Pattern QUERY_CSRF = Pattern.compile(
+            "(?<=[?&])csrf\s*=\s*[^&\s]+", Pattern.CASE_INSENSITIVE);
+    private static final Pattern QUERY_TOKEN = Pattern.compile(
+            "(?<=[?&])token\s*=\s*[^&\s]+", Pattern.CASE_INSENSITIVE);
+
     private static final Pattern JSON_PASSWORD = Pattern.compile(
             "(\"password\"\\s*:\\s*)\"[^\"]*\"",
             Pattern.CASE_INSENSITIVE);
@@ -51,6 +59,8 @@ public final class LoggingScrubber {
         result = maskAuthorization(result);
         result = maskSetCookie(result);
         result = maskXsrfToken(result);
+        result = maskQueryCsrf(result);
+        result = maskQueryToken(result);
         result = maskJsonPassword(result);
         result = maskJsonToken(result);
         return result;
@@ -86,6 +96,27 @@ public final class LoggingScrubber {
         StringBuffer sb = new StringBuffer();
         while (m.find()) {
             m.appendReplacement(sb, Matcher.quoteReplacement("XSRF-TOKEN=***"));
+        }
+        m.appendTail(sb);
+        return sb.toString();
+    }
+
+
+    private static String maskQueryCsrf(String s) {
+        Matcher m = QUERY_CSRF.matcher(s);
+        StringBuffer sb = new StringBuffer();
+        while (m.find()) {
+            m.appendReplacement(sb, Matcher.quoteReplacement("csrf=***"));
+        }
+        m.appendTail(sb);
+        return sb.toString();
+    }
+
+    private static String maskQueryToken(String s) {
+        Matcher m = QUERY_TOKEN.matcher(s);
+        StringBuffer sb = new StringBuffer();
+        while (m.find()) {
+            m.appendReplacement(sb, Matcher.quoteReplacement("token=***"));
         }
         m.appendTail(sb);
         return sb.toString();

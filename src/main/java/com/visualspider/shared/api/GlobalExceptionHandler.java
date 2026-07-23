@@ -8,6 +8,9 @@ import com.visualspider.identity.domain.exceptions.WeakPasswordException;
 import com.visualspider.task.domain.exceptions.StaleTaskVersionException;
 import com.visualspider.task.domain.exceptions.TaskInvalidDefinitionException;
 import com.visualspider.task.domain.exceptions.TaskNotFoundException;
+import com.visualspider.visualbrowser.internal.ConfigLaneFullException;
+import com.visualspider.visualbrowser.internal.VisualSessionNotFoundException;
+import com.visualspider.visualbrowser.internal.VisualSessionNotOwnerException;
 import jakarta.validation.ConstraintViolationException;
 import java.util.stream.Collectors;
 import org.slf4j.Logger;
@@ -135,6 +138,25 @@ public class GlobalExceptionHandler {
                 .body(ApiError.of(BusinessErrorCode.VALIDATION_FAILED,
                         message.isEmpty() ? "校验失败" : message,
                         fieldPath));
+    }
+
+
+    @ExceptionHandler(VisualSessionNotFoundException.class)
+    public ResponseEntity<ApiError> handleSessionNotFound(VisualSessionNotFoundException ex) {
+        return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                .body(ApiError.of(BusinessErrorCode.SESSION_NOT_FOUND, ex.getMessage()));
+    }
+
+    @ExceptionHandler(VisualSessionNotOwnerException.class)
+    public ResponseEntity<ApiError> handleSessionNotOwner(VisualSessionNotOwnerException ex) {
+        return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                .body(ApiError.of(BusinessErrorCode.SESSION_NOT_OWNER, ex.getMessage()));
+    }
+
+    @ExceptionHandler(ConfigLaneFullException.class)
+    public ResponseEntity<ApiError> handleConfigLaneFull(ConfigLaneFullException ex) {
+        return ResponseEntity.status(HttpStatus.CONFLICT)
+                .body(ApiError.of(BusinessErrorCode.CONFIG_LANE_FULL));
     }
 
     @ExceptionHandler(IllegalArgumentException.class)
