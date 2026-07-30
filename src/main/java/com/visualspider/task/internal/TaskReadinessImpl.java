@@ -9,6 +9,7 @@ import com.visualspider.task.domain.ReadinessReport.ReadinessError;
 import com.visualspider.task.domain.TaskDefinition;
 import com.visualspider.task.domain.TaskDraft;
 import com.visualspider.task.domain.Viewport;
+import com.visualspider.task.spi.TaskCatalog;
 import com.visualspider.task.spi.TaskReadiness;
 import java.net.URI;
 import java.util.ArrayList;
@@ -38,6 +39,18 @@ public class TaskReadinessImpl implements TaskReadiness {
 
     private static final int EXPECTED_SCHEMA_VERSION = 1;
     private final XPath xpathCompiler = XPathFactory.newInstance().newXPath();
+    /** @Lazy 打破 TaskCatalog -> TaskReadiness -> TaskCatalog 构造期循环（ADR-0005）。 */
+    private final TaskCatalog taskCatalog;
+
+    /** 测试构造：不接入 TaskCatalog，{@link #validateForRun} 退化为 stub。 */
+    public TaskReadinessImpl() {
+        this(null);
+    }
+
+    @org.springframework.beans.factory.annotation.Autowired
+    public TaskReadinessImpl(@org.springframework.context.annotation.Lazy TaskCatalog taskCatalog) {
+        this.taskCatalog = taskCatalog;
+    }
 
     @Override
     public ReadinessReport validate(TaskDefinition draft) {
@@ -58,9 +71,13 @@ public class TaskReadinessImpl implements TaskReadiness {
 
     @Override
     public ReadinessReport validateForRun(long taskId, ActorId actor) {
-        // M2-4 接到 TaskCatalog 后真正读 ownership 与运行前语法校验；本次实现只在
-        // 输入已有 TaskDefinition 时复用 validate 逻辑，避免依赖 task 包外部接口。
-        return ReadinessReport.success();
+        // ADR-0005：读 draft 后复用语法校验；运行时检查由 extraction 承担，不参与 READY。
+        if (taskCatalog == null) {
+            // 测试 stub 路径：无 catalog 可读，直接返回 success。
+            return ReadinessReport.success();
+        }
+        TaskDraft draft = taskCatalog.read(taskId, actor);
+        return validate(draft.definition());
     }
 
     /** 由 {@code TaskCatalog.saveDraft} 在保存前调用，避免 TaskReadiness 依赖 TaskCatalog。 */

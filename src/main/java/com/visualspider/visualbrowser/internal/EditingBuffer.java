@@ -114,13 +114,13 @@ public class EditingBuffer {
             } catch (RuntimeException second) {
                 LOG.warn("autosave conflict: sessionId={}", sessionId);
                 // 双冲突 → 落 unsaved 文件
-                writeUnsaved(sessionId, current);
+                writeUnsaved(sessionId, buffer.taskId, current);
                 throw new EditBufferConflictException(sessionId);
             }
         } catch (RuntimeException ex) {
             LOG.warn("autosave DB failure: sessionId={}", sessionId, ex);
             // DB 不可用 → 落 unsaved 文件
-            writeUnsaved(sessionId, current);
+            writeUnsaved(sessionId, buffer.taskId, current);
             throw ex;
         }
     }
@@ -159,25 +159,24 @@ public class EditingBuffer {
         persist(sessionId, state.buffer, actor);
     }
 
-    /** 立即覆盖当前编辑并触发一次防抖保存（用于显式"立即保存"动作）。 */
+    /** 立即覆盖当前编辑并触发一次防抖保存；session 未初始化时 no-op（避免伪造 taskId）。 */
     public void update(String sessionId, ActorId actor, TaskDefinition next) {
-        Buffer buffer = getOrCreate(sessionId, lookupTaskId(sessionId, actor), actor);
-        buffer.current.set(next);
+        SessionState state = states.get(sessionId);
+        if (state == null) {
+            LOG.debug("update ignored: session not initialized sessionId={}", sessionId);
+            return;
+        }
+        state.buffer.current.set(next);
+        state.buffer.lastChangeAt.set(System.currentTimeMillis());
         scheduleSave(sessionId, actor);
     }
 
-    private long lookupTaskId(String sessionId, ActorId actor) {
-        // 仅供 update 调用；buffer 已存在时不会进入此分支。
-        SessionState state = states.get(sessionId);
-        return state == null ? -1L : state.buffer.taskId;
-    }
-
-    private void writeUnsaved(String sessionId, TaskDefinition def) {
+    private void writeUnsaved(String sessionId, long taskId, TaskDefinition def) {
         try {
             Files.createDirectories(logsDirectory);
             Path file = logsDirectory.resolve("unsaved-buffer-" + safeName(sessionId) + ".json");
             String json = "{ \"sessionId\": \"" + sessionId + "\","
-                    + " \"taskId\": " + -1 + ","
+                    + " \"taskId\": " + taskId + ","
                     + " \"schemaVersion\": " + def.schemaVersion() + " }";
             Files.writeString(file, json);
         } catch (IOException ex) {

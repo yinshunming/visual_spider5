@@ -94,6 +94,46 @@ class TaskReadinessImplM2Test {
                 .contains(BusinessErrorCode.TASK_INVALID_URL.code());
     }
 
+    @Test
+    void validateForRunReadsDraftAndValidatesDefinition() {
+        TaskDefinition valid = definition("http://example.com/",
+                List.of(field("title", "h1", null, FieldSource.VISIBLE_TEXT, null, null)));
+        com.visualspider.task.domain.TaskDraft draft = new com.visualspider.task.domain.TaskDraft(
+                11L, 1L, "demo", new SinglePage(), com.visualspider.task.domain.TaskStatus.DRAFT,
+                1, 5L, valid, java.time.OffsetDateTime.now());
+        com.visualspider.task.spi.TaskCatalog catalog = new com.visualspider.task.spi.TaskCatalog() {
+            @Override public long createDraft(com.visualspider.task.domain.TaskDefinition d, String n, com.visualspider.identity.domain.ActorId a) { throw new UnsupportedOperationException(); }
+            @Override public java.util.List<com.visualspider.task.domain.TaskSummary> listMine(com.visualspider.identity.domain.ActorId actor) { throw new UnsupportedOperationException(); }
+            @Override public com.visualspider.task.domain.TaskDraft read(long taskId, com.visualspider.identity.domain.ActorId actor) { return draft; }
+            @Override public com.visualspider.task.domain.TaskDraft saveDraft(long taskId, com.visualspider.task.domain.TaskDefinition d, long v, com.visualspider.identity.domain.ActorId a) { throw new UnsupportedOperationException(); }
+            @Override public void delete(long taskId, com.visualspider.identity.domain.ActorId actor) { throw new UnsupportedOperationException(); }
+        };
+        TaskReadinessImpl withCatalog = new TaskReadinessImpl(catalog);
+        ReadinessReport report = withCatalog.validateForRun(11L, new com.visualspider.identity.domain.ActorId(1L));
+        assertThat(report.ready()).isTrue();
+    }
+
+    @Test
+    void validateForRunSurfacesInvalidSelectorFromDraft() {
+        TaskDefinition invalid = definition("http://example.com/",
+                List.of(field("bad", "<<<broken", null, FieldSource.VISIBLE_TEXT, null, null)));
+        com.visualspider.task.domain.TaskDraft draft = new com.visualspider.task.domain.TaskDraft(
+                11L, 1L, "demo", new SinglePage(), com.visualspider.task.domain.TaskStatus.DRAFT,
+                1, 5L, invalid, java.time.OffsetDateTime.now());
+        com.visualspider.task.spi.TaskCatalog catalog = new com.visualspider.task.spi.TaskCatalog() {
+            @Override public long createDraft(com.visualspider.task.domain.TaskDefinition d, String n, com.visualspider.identity.domain.ActorId a) { throw new UnsupportedOperationException(); }
+            @Override public java.util.List<com.visualspider.task.domain.TaskSummary> listMine(com.visualspider.identity.domain.ActorId actor) { throw new UnsupportedOperationException(); }
+            @Override public com.visualspider.task.domain.TaskDraft read(long taskId, com.visualspider.identity.domain.ActorId actor) { return draft; }
+            @Override public com.visualspider.task.domain.TaskDraft saveDraft(long taskId, com.visualspider.task.domain.TaskDefinition d, long v, com.visualspider.identity.domain.ActorId a) { throw new UnsupportedOperationException(); }
+            @Override public void delete(long taskId, com.visualspider.identity.domain.ActorId actor) { throw new UnsupportedOperationException(); }
+        };
+        TaskReadinessImpl withCatalog = new TaskReadinessImpl(catalog);
+        ReadinessReport report = withCatalog.validateForRun(11L, new com.visualspider.identity.domain.ActorId(1L));
+        assertThat(report.ready()).isFalse();
+        assertThat(report.errors()).extracting(e -> e.code())
+                .contains(BusinessErrorCode.TASK_INVALID_SELECTOR.code());
+    }
+
     private static TaskDefinition definition(String startUrl, List<FieldDefinition> fields) {
         return new TaskDefinition(1, new SinglePage(), startUrl, Viewport.DEFAULT, fields);
     }

@@ -197,6 +197,26 @@ public final class PlaywrightControl {
         return lane.submit(() -> ((Number) page().evaluate("() => window.scrollY")).longValue());
     }
 
+    /**
+     * 查询选择器匹配的所有节点摘要（tagName/id/className/textContent/attributes）。
+     * 在 lane 线程执行；返回的 Map 不含 ElementHandle，供 M2-3 #19 预览管道构造 DomState。
+     */
+    @SuppressWarnings("unchecked")
+    public CompletableFuture<java.util.List<java.util.Map<String, Object>>> queryFieldNodes(String selector) {
+        return lane.submit(() -> {
+            String js = "(sel) => {"
+                    + "  const nodes = Array.from(document.querySelectorAll(sel));"
+                    + "  return nodes.map(el => {"
+                    + "    const attrs = {};"
+                    + "    for (const a of el.attributes) attrs[a.name] = a.value;"
+                    + "    return { tagName: el.tagName, id: el.id || '', className: el.className || '',"
+                    + "      textContent: (el.textContent || '').substring(0, 500), attributes: attrs };"
+                    + "  });"
+                    + "}";
+            return (java.util.List<java.util.Map<String, Object>>) page().evaluate(js, selector);
+        });
+    }
+
     /** 等待选择器匹配元素（Playwright 自动等待），供测试避免固定 sleep。 */
     public CompletableFuture<Void> waitForSelector(String selector) {
         return lane.submit(() -> {

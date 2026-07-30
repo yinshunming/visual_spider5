@@ -1,6 +1,7 @@
 import { http } from '../http'
 import type {
   PreviewResult,
+  TaskDefinition,
   ValidateSelectorsRequest,
   ValidateSelectorsResponse,
   VisualSessionDto,
@@ -33,10 +34,13 @@ export const visualSessionApi = {
       request,
     )
   },
-  preview(sessionId: string, definition: unknown): Promise<PreviewResult> {
+  preview(sessionId: string, definition: TaskDefinition): Promise<PreviewResult> {
     return http.post<PreviewResult>(
       `/api/visual-sessions/${encodeURIComponent(sessionId)}/preview`,
       { definition },
     )
+  },
+  patchBuffer(sessionId: string, definition: TaskDefinition): Promise<void> {
+    return http.put<void>(`/api/visual-sessions/${encodeURIComponent(sessionId)}`, { definition })
   },
 }

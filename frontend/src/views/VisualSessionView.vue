@@ -52,7 +52,13 @@ async function connectSocket(id: string): Promise<void> {
       }
     } else if (event.data instanceof ArrayBuffer) {
       const blob = new Blob([event.data], { type: 'image/jpeg' })
-      lastFrameUrl.value = URL.createObjectURL(blob)
+      const next = URL.createObjectURL(blob)
+      const prev = lastFrameUrl.value
+      lastFrameUrl.value = next
+      // spec §D3 帧通道只保留最新帧：立即回收上一帧的 object URL，避免内存累积。
+      if (prev && prev.startsWith('blob:')) {
+        URL.revokeObjectURL(prev)
+      }
     }
   }
   socket.onclose = () => {
@@ -71,7 +77,16 @@ async function closeSession(): Promise<void> {
     socket = null
     sessionId.value = ''
     lifecycle.value = 'CLOSED'
+    releaseFrame()
   }
+}
+
+function releaseFrame(): void {
+  const prev = lastFrameUrl.value
+  if (prev && prev.startsWith('blob:')) {
+    URL.revokeObjectURL(prev)
+  }
+  lastFrameUrl.value = null
 }
 
 async function heartbeat(): Promise<void> {

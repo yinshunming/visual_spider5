@@ -1,5 +1,11 @@
 package com.visualspider.visualbrowser;
 
+import com.visualspider.extraction.spi.ExtractionPreview;
+import com.visualspider.extraction.spi.PreviewResult;
+import com.visualspider.task.domain.TaskDefinition;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
 import java.util.concurrent.CompletionException;
 
 /**
@@ -135,6 +141,49 @@ public final class VisualSession implements AutoCloseable {
                 || InputCommand.TYPE_BACK.equals(cmd.type())
                 || InputCommand.TYPE_FORWARD.equals(cmd.type())
                 || InputCommand.TYPE_RELOAD.equals(cmd.type());
+    }
+
+    /**
+     * 在当前 lane/Page 上对 definition 执行预览（M2-3 #19）。
+     *
+     * <p>在 lane 线程内直接查询 DOM 构造 {@link ExtractionPreview.DomState}，再委托
+     * {@link ExtractionPreview}（与 M3 运行共用同一实现）。不写库。
+     */
+    @SuppressWarnings("unchecked")
+    public PreviewResult preview(TaskDefinition definition, ExtractionPreview extraction) {
+        return lane.submit(() -> {
+            ExtractionPreview.DomState dom = new ExtractionPreview.DomState() {
+                @Override
+                public String url() {
+                    return lane.page().url();
+                }
+
+                @Override
+                public List<ExtractionPreview.Node> querySelectorAll(String selector) {
+                    String js = "(sel) => {"
+                            + "  const nodes = Array.from(document.querySelectorAll(sel));"
+                            + "  return nodes.map(el => {"
+                            + "    const attrs = {};"
+                            + "    for (const a of el.attributes) attrs[a.name] = a.value;"
+                            + "    return { tagName: el.tagName, id: el.id || '', className: el.className || '',"
+                            + "      textContent: (el.textContent || '').substring(0, 500), attributes: attrs };"
+                            + "  });"
+                            + "}";
+                    List<Map<String, Object>> maps = (List<Map<String, Object>>) lane.page().evaluate(js, selector);
+                    List<ExtractionPreview.Node> nodes = new ArrayList<>();
+                    for (Map<String, Object> m : maps) {
+                        nodes.add(new ExtractionPreview.Node(
+                                (String) m.get("tagName"),
+                                (String) m.get("id"),
+                                (String) m.get("className"),
+                                (String) m.get("textContent"),
+                                (Map<String, String>) m.get("attributes")));
+                    }
+                    return nodes;
+                }
+            };
+            return extraction.preview(definition, dom);
+        }).join();
     }
 
     @Override

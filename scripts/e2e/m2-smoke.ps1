@@ -113,10 +113,14 @@ try {
     Invoke-WebRequest -Uri "$BaseUrl/api/visual-sessions/$reopenedId" -Method DELETE -WebSession $cookieJar | Out-Null
 
     Step 13 '验证 Chromium 子进程 0 残留（Windows）'
-    $chromium = Get-Process -Name 'msedge' -ErrorAction SilentlyContinue | Where-Object { $_.MainWindowTitle -like '*playwright*' }
+    # Playwright headless Chromium 进程名通常是 chrome.exe，且命令行含 --headless/playwright driver 路径。
+    # MainWindowTitle 为空，不能用窗口标题筛选；改用 CIM CommandLine 匹配。
+    $chromium = Get-CimInstance Win32_Process -Filter "Name='chrome.exe'" -ErrorAction SilentlyContinue |
+        Where-Object { $_.CommandLine -like '*playwright*' -or $_.CommandLine -like '*--headless*' }
     if ($chromium) {
         Write-Warning 'Chromium 子进程未回收，详情：'
-        $chromium | Format-Table Id, ProcessName, MainWindowTitle
+        $chromium | Format-Table ProcessId, Name, CommandLine
+        exit 1
     } else {
         Write-Host 'Chromium 子进程已清空。'
     }
