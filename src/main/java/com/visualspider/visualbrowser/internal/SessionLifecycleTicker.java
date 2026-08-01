@@ -15,7 +15,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
-import org.springframework.stereotype.Component;
 import jakarta.annotation.PreDestroy;
 
 /**
@@ -25,7 +24,6 @@ import jakarta.annotation.PreDestroy;
  * 触发 IDLE_TIMEOUT；{@code now - openedAt > maxDuration} 触发 MAX_DURATION；
  * 两者同时满足时优先 max。
  */
-@Component
 public class SessionLifecycleTicker {
 
     private static final Logger LOG = LoggerFactory.getLogger(SessionLifecycleTicker.class);

@@ -6,7 +6,6 @@ import com.visualspider.visualbrowser.spi.VisualSessionChannel;
 import com.visualspider.visualbrowser.spi.VisualSessionManager;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.stereotype.Component;
 
 /**
  * {@link VisualSessionChannel} 生产实现（M2-1 #17）。
@@ -17,7 +16,6 @@ import org.springframework.stereotype.Component;
  * <p>实际的浏览器操作走 {@code CommandExecutor} 抽象；生产由 M2-1 ws handler 注入到
  * Playwright-backed 实现，单测注入返回布尔结果的 fake。
  */
-@Component
 public class DefaultVisualSessionChannel implements VisualSessionChannel {
 
     private static final Logger LOG = LoggerFactory.getLogger(DefaultVisualSessionChannel.class);

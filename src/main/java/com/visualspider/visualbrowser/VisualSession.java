@@ -49,7 +49,7 @@ public final class VisualSession implements AutoCloseable {
     }
 
     /** 包级访问控制类，供测试取元素坐标。 */
-    PlaywrightControl control() {
+    public PlaywrightControl control() {
         return control;
     }
 

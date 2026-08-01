@@ -119,11 +119,14 @@ public class VisualSessionController {
         if (owned.lifecycle() == com.visualspider.visualbrowser.spi.SessionLifecycleState.CLOSED) {
             throw new com.visualspider.visualbrowser.internal.VisualSessionNotFoundException(sessionId);
         }
+        // 在 session 绑定的 lane/Page 上校验（per-session PlaywrightControl），与 preview 同路径
+        var legacy = manager.legacySession(sessionId)
+                .orElseThrow(() -> new com.visualspider.visualbrowser.internal.VisualSessionNotFoundException(sessionId));
         List<ValidateSelectorsResponse.SelectorOutcome> outcomes = new ArrayList<>();
         for (ValidateSelectorsRequest.SelectorEntry entry : request.selectors()) {
             String type = entry.type() == null ? "css" : entry.type();
             try {
-                var result = selectorValidationService.validateOne(entry.selector(), type);
+                var result = selectorValidationService.validateOne(entry.selector(), type, legacy.control());
                 outcomes.add(new ValidateSelectorsResponse.SelectorOutcome(
                         entry.selector(), type, result.valid(),
                         result.count(),

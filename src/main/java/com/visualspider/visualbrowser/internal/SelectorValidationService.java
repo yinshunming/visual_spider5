@@ -10,14 +10,17 @@ import org.springframework.stereotype.Service;
 /**
  * 选择器校验服务（M2-2 #18）。
  *
- * <p>先在 lane 内做语法检查（CSS via Jsoup、XPath via JDK {@code XPathFactory}），
- * 然后通过 {@code PlaywrightControl.validateSelector} 实际查询当前页：
+ * <p>先做语法检查（CSS via Jsoup、XPath via JDK {@code XPathFactory}），然后通过
+ * {@code PlaywrightControl.validateSelector} 实际查询当前页：
  * <ul>
- *   <li>语法失败 → {@link InvalidSelectorException}</li>
- *   <li>runtime OK → matchCount + matchedElements（不存 ElementHandle）</li>
- *   <li>0 匹配 → matchCount=0，不抛错</li>
- *   <li>多匹配 → matchCount>=1，返回 matchedElements（前端用于高亮）</li>
+ *   <li>语法失败 -> {@link InvalidSelectorException}</li>
+ *   <li>runtime OK -> matchCount + matchedElements（不存 ElementHandle）</li>
+ *   <li>0 匹配 -> matchCount=0，不抛错</li>
+ *   <li>多匹配 -> matchCount>=1，返回 matchedElements（前端用于高亮）</li>
  * </ul>
+ *
+ * <p>{@link PlaywrightControl} 由调用方按 session 传入（per-session，绑定当前 lane/Page），
+ * 与 preview 同路径；本服务无状态，可作为单例。
  */
 @Service
 public class SelectorValidationService {
@@ -25,14 +28,12 @@ public class SelectorValidationService {
     private static final Logger LOG = LoggerFactory.getLogger(SelectorValidationService.class);
 
     private final SelectorSyntaxValidator syntaxValidator;
-    private final PlaywrightControl control;
 
-    public SelectorValidationService(SelectorSyntaxValidator syntaxValidator, PlaywrightControl control) {
+    public SelectorValidationService(SelectorSyntaxValidator syntaxValidator) {
         this.syntaxValidator = syntaxValidator;
-        this.control = control;
     }
 
-    public ValidationResult validateOne(String selector, String type) {
+    public ValidationResult validateOne(String selector, String type, PlaywrightControl control) {
         if ("css".equalsIgnoreCase(type)) {
             syntaxValidator.validateCss(selector);
         } else {

@@ -10,12 +10,14 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import org.springframework.stereotype.Component;
 
 /**
  * 字段清洗管道（M2-3 #19）：trim → regex (capture group) → type convert → empty detection。
  *
  * <p>失败时仍保留 rawValue，附诊断 enum。preview 与 run 共用同一实现，确保预览可用则可跑。
  */
+@Component
 public final class CleaningPipeline {
 
     public Result clean(String rawValue, FieldDefinition field, ResultCollector collector) {
