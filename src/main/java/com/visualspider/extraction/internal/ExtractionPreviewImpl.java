@@ -1,8 +1,10 @@
 package com.visualspider.extraction.internal;
 
+import com.visualspider.extraction.spi.ExtractionDiagnostic;
 import com.visualspider.extraction.spi.ExtractionDiagnostic.DiagnosticCode;
 import com.visualspider.extraction.spi.ExtractionPreview;
 import com.visualspider.extraction.spi.ExtractionPreview.DomState;
+import com.visualspider.extraction.spi.ExtractionPreview.ListPreviewResult;
 import com.visualspider.extraction.spi.ExtractionPreview.Node;
 import com.visualspider.extraction.spi.PreviewResult;
 import com.visualspider.extraction.spi.PreviewResult.FieldOutcome;
@@ -50,6 +52,48 @@ public final class ExtractionPreviewImpl implements ExtractionPreview {
         }
         return new PreviewResult(List.copyOf(outcomes), collector.immutable());
     }
+
+    @Override
+    public ListPreviewResult previewList(TaskDefinition definition, DomState domState, int maxItems) {
+        int cap = Math.min(Math.max(maxItems, 0), MAX_PREVIEW_ITEMS);
+        if (definition == null || domState == null
+                || definition.listItemRule() == null) {
+            return new ListPreviewResult(List.of(), 0, List.of());
+        }
+        SelectorType type = definition.listItemRule().selectorType() == null
+                ? SelectorType.CSS : definition.listItemRule().selectorType();
+        List<Node> items;
+        try {
+            items = domState.query(definition.listItemRule().selector(), type);
+        } catch (RuntimeException ex) {
+            // 选择器语法错误：返回 0 + 单一诊断
+            return new ListPreviewResult(List.of(), 0, List.of(
+                    new ExtractionDiagnostic(DiagnosticCode.SELECTOR_SYNTAX_INVALID,
+                            "listItemRule",
+                            "listItemRule.selector 语法错误: " + ex.getMessage(),
+                            "listItemRule.selector")));
+        }
+        int total = items.size();
+        List<Node> slice = items.size() > cap ? items.subList(0, cap) : items;
+        List<PreviewResult> previews = new ArrayList<>();
+        List<ExtractionDiagnostic> diags = new ArrayList<>();
+        for (Node item : slice) {
+            DomState scoped;
+            try {
+                scoped = domState.scopeToNode(item);
+            } catch (UnsupportedOperationException noScope) {
+                // 测试或不可作用域场景：fallback 到父 state（可能字段在所有 item 间共享）
+                scoped = domState;
+            }
+            PreviewResult pr = preview(definition, scoped);
+            previews.add(pr);
+            diags.addAll(pr.diagnostics());
+        }
+        return new ListPreviewResult(previews, total, diags);
+    }
+
+    /** spec §T3：list 模式预览硬上限 20。 */
+    private static final int MAX_PREVIEW_ITEMS = 20;
 
     private String readRaw(FieldDefinition field, DomState domState,
                            CleaningPipeline.ResultCollector collector) {

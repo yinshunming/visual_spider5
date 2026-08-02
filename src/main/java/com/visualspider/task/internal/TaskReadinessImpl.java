@@ -51,15 +51,26 @@ public class TaskReadinessImpl implements TaskReadiness {
     private final XPath xpathCompiler = XPathFactory.newInstance().newXPath();
     /** @Lazy 打破 TaskCatalog -> TaskReadiness -> TaskCatalog 构造期循环（ADR-0005）。 */
     private final TaskCatalog taskCatalog;
+    /** M4 spec §D10 实匹配校验 hook（生产 Playwright lane 装配）。 */
+    private final com.visualspider.task.spi.LiveReadinessHook liveHook;
 
-    /** 测试构造：不接入 TaskCatalog，{@link #validateForRun} 退化为 stub。 */
+    /** 测试构造：不接入 TaskCatalog / live hook，{@link #validateForRun} 退化为 stub。 */
     public TaskReadinessImpl() {
-        this(null);
+        this(null, new com.visualspider.task.internal.AlwaysPassLiveReadinessHook());
     }
 
     @org.springframework.beans.factory.annotation.Autowired
-    public TaskReadinessImpl(@org.springframework.context.annotation.Lazy TaskCatalog taskCatalog) {
+    public TaskReadinessImpl(@org.springframework.context.annotation.Lazy TaskCatalog taskCatalog,
+                            com.visualspider.task.spi.LiveReadinessHook liveHook) {
         this.taskCatalog = taskCatalog;
+        this.liveHook = liveHook == null
+                ? new com.visualspider.task.internal.AlwaysPassLiveReadinessHook()
+                : liveHook;
+    }
+
+    /** M3 二元构造保留（仅 catalog），live hook 走默认 no-op。 */
+    public TaskReadinessImpl(TaskCatalog taskCatalog) {
+        this(taskCatalog, new com.visualspider.task.internal.AlwaysPassLiveReadinessHook());
     }
 
     @Override
@@ -77,6 +88,24 @@ public class TaskReadinessImpl implements TaskReadiness {
         validateListItemRule(draft, errors);
         validateUniqueKey(draft, errors);
         validateFields(draft.fields(), errors);
+        // Live 实匹配校验（spec §D10）：listItemRule 命中数 + 字段多匹配
+        if (draft.mode() instanceof com.visualspider.task.domain.TaskMode.List
+                && draft.listItemRule() != null) {
+            com.visualspider.task.spi.LiveReadinessHook.LiveReadinessOutcome live =
+                    liveHook.check(draft, -1L);
+            if (!live.passed()) {
+                for (int i = 0; i < live.blockingCodes().size(); i++) {
+                    String code = live.blockingCodes().get(i);
+                    String msg = i < live.messages().size() ? live.messages().get(i) : code;
+                    BusinessErrorCode mapped = switch (code) {
+                        case "LIST_ITEM_RULE_NO_MATCH" -> BusinessErrorCode.LIST_ITEM_RULE_NO_MATCH;
+                        case "MULTIPLE_MATCH" -> BusinessErrorCode.MULTIPLE_MATCH;
+                        default -> BusinessErrorCode.TASK_INVALID_DEFINITION;
+                    };
+                    errors.add(error(mapped, msg, "live"));
+                }
+            }
+        }
         return errors.isEmpty() ? ReadinessReport.success() : ReadinessReport.failure(errors);
     }
 

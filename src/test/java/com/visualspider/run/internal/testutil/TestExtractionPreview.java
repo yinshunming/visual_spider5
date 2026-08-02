@@ -70,4 +70,11 @@ public class TestExtractionPreview implements ExtractionPreview {
         }
         return queuedResults.remove(0);
     }
+
+    @Override
+    public ListPreviewResult previewList(TaskDefinition definition, DomState domState, int maxItems) {
+        // 测试 stub：M4 测试通常直接验证 preview/previewList 共用诊断；previewList 返回单条预览即可
+        var pr = preview(definition, domState);
+        return new ListPreviewResult(List.of(pr), 1, pr.diagnostics());
+    }
 }
