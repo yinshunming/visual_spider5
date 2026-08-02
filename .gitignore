@@ -22,3 +22,7 @@ frontend/node/
 # OS
 .DS_Store
 Thumbs.db
+
+# Agent 内部状态（sandbox 与 worktree 数据，不入版本库）
+.scratch/
+.claude/
