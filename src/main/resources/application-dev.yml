@@ -1,0 +1,25 @@
+# dev profile：本地手工测试用，自动以 admin 登录；不要部署到对外环境
+# 配套代码：com.visualspider.shared.config.DevSecurityConfig
+# 数据库：visualspider 库下独立 schema visualspider_dev（避免和 prod / it 共享表）
+spring:
+  datasource:
+    url: jdbc:postgresql://localhost:5432/visualspider?currentSchema=visualspider_dev
+  flyway:
+    schemas: visualspider_dev
+    default-schema: visualspider_dev
+    create-schemas: true
+
+server:
+  port: 8080
+
+# dev profile 下 SeedAdminInitializer 不跑，admin 由 DevSecurityConfig 硬编码；
+# 但 SeedAdminValidator 仍加载并校验 seed.admin 配置存在，显式给占位值。
+seed:
+  admin:
+    username: dev-admin
+    raw-password: change-me-please-12+
+
+logging:
+  level:
+    com.visualspider: DEBUG
+    org.springframework.security: DEBUG

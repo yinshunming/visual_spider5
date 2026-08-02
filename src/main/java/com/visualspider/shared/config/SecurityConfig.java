@@ -2,6 +2,7 @@ package com.visualspider.shared.config;
 
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.context.annotation.Profile;
 import org.springframework.core.env.Environment;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
@@ -35,6 +36,7 @@ import org.springframework.security.web.util.matcher.AntPathRequestMatcher;
  * <p>测试模式：{@code security.test.disable-csrf=true} 时关闭 CSRF（仅用于 *IT 装配）。
  */
 @Configuration
+@Profile("!dev")
 public class SecurityConfig {
 
     @Bean

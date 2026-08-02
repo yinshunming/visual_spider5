@@ -31,7 +31,7 @@ import java.util.Arrays;
  * <p>不抛异常覆盖已有账号：避免运维误重启时覆盖密码。
  */
 @Configuration
-@Profile({"it", "prod"})
+@Profile({"it", "prod", "dev"})
 public class SeedAdminInitializer {
 
     private static final Logger LOG = LoggerFactory.getLogger(SeedAdminInitializer.class);
