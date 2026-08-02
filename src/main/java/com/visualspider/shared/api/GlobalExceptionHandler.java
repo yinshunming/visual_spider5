@@ -5,6 +5,7 @@ import com.visualspider.identity.domain.exceptions.DuplicateUsernameException;
 import com.visualspider.identity.domain.exceptions.NotAuthenticatedException;
 import com.visualspider.identity.domain.exceptions.UserNotFoundException;
 import com.visualspider.identity.domain.exceptions.WeakPasswordException;
+import com.visualspider.result.spi.RunAccessDeniedException;
 import com.visualspider.task.domain.exceptions.StaleTaskVersionException;
 import com.visualspider.task.domain.exceptions.TaskInvalidDefinitionException;
 import com.visualspider.task.domain.exceptions.TaskNotFoundException;
@@ -174,6 +175,13 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ApiError> handleConfigLaneFull(ConfigLaneFullException ex) {
         return ResponseEntity.status(HttpStatus.CONFLICT)
                 .body(ApiError.of(BusinessErrorCode.CONFIG_LANE_FULL));
+    }
+
+    @ExceptionHandler(RunAccessDeniedException.class)
+    public ResponseEntity<ApiError> handleRunAccessDenied(RunAccessDeniedException ex) {
+        // 非 owner 且非 admin 访问 run 结果 -> RESOURCE_NOT_FOUND（不回显存在性，spec §D12）
+        return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                .body(ApiError.of(BusinessErrorCode.RESOURCE_NOT_FOUND, "运行不存在"));
     }
 
     @ExceptionHandler(IllegalArgumentException.class)
