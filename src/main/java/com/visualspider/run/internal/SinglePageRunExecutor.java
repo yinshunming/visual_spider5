@@ -149,9 +149,13 @@ public class SinglePageRunExecutor implements RunExecutor {
                 finalState = RunState.CANCELLED;
                 break;
             }
-            if (context.pageLimitExceeded() || context.recordLimitExceeded()) {
+            if (context.pageLimitExceeded()) {
                 // 单页不可达；M4/M5 起作用。当前实现保留检查点但不写终态。
                 finalStop = StopReason.PAGE_LIMIT;
+                break;
+            }
+            if (context.recordLimitExceeded()) {
+                finalStop = StopReason.RECORD_LIMIT;
                 break;
             }
 
@@ -271,10 +275,6 @@ public class SinglePageRunExecutor implements RunExecutor {
             tryEmitTerminal(runId, RunState.SUCCESS, StopReason.COMPLETED,
                     "single-page extraction completed");
             terminalWritten = true;
-            // 用过 selectorsOk 抑制 unused 警告（保留以便未来诊断可访问）
-            if (!selectorsOk) {
-                LOG.warn("selectorsOk=false but reached success; selectors code path");
-            }
             return;
         }
 
@@ -315,11 +315,14 @@ public class SinglePageRunExecutor implements RunExecutor {
     }
 
     private void tryEmitTerminal(long runId, RunState state, StopReason stopReason, String message) {
-        // 先发 terminal 事件，再写终态；保持与"结果写 -> 事件写 -> 终态写"顺序
+        // 先发 terminal 事件，再写终态；保持与"结果写 -> 事件写 -> 终态写"顺序。
+        // run_event.message 是用户可见摘要（spec §D19），仅记录 reason code + 终止阶段，
+        // 不外带 URL / 异常细节；异常明细只走技术日志。
+        String safeMessage = message == null ? "" : sanitizeEventMessage(message);
         RunEventInput terminalEvent = new RunEventInput(
                 RunEventLevel.INFO, "terminal", null, null,
                 state + "/" + (stopReason == null ? "null" : stopReason.name())
-                        + (message == null ? "" : ": " + message));
+                        + (safeMessage.isEmpty() ? "" : ": " + safeMessage));
         try {
             resultSink.appendBatch(runId, List.of(), List.of(terminalEvent));
         } catch (RuntimeException ex) {
@@ -364,6 +367,24 @@ public class SinglePageRunExecutor implements RunExecutor {
 
     private static String safeMessage(Exception e) {
         return safeMessage((Throwable) e);
+    }
+
+    /**
+     * 把写进 {@code run_event.message} 的字符串清理为"阶段 + 简短 reason code"，避免外带
+     * URL / 异常堆栈 / 完整消息原文（spec §D19：用户可见摘要，不含敏感数据）。
+     *
+     * <p>约定：传入字符串含 {@code ':'} 时取 {@code ':'} 之前的前缀作为 reason code
+     * （与现有调用点 "invalid start url: ..." / "final url rejected: ..." 一致）；
+     * 其余情况截断到 80 字符。
+     */
+    private static String sanitizeEventMessage(String raw) {
+        int colon = raw.indexOf(':');
+        String head = colon >= 0 ? raw.substring(0, colon) : raw;
+        head = head.strip();
+        if (head.length() > 80) {
+            head = head.substring(0, 80) + "...";
+        }
+        return head;
     }
 
     private static String terminalMessage(StopReason r) {

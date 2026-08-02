@@ -134,11 +134,20 @@ public class RunCoordinatorImpl implements RunCoordinator {
                 || state == RunState.CANCELLED || state == RunState.INTERRUPTED) {
             throw new RunNotCancellableException(runId, state);
         }
+        if (state == RunState.WAITING) {
+            // 排队中取消：直接翻 CANCELLED + finished_at=now（spec §D10 迁移图 WAITING -> CANCELLED）
+            int rows = repository.markCancelledIfWaiting(runId);
+            if (rows == 0) {
+                throw new RunNotFoundException(runId);
+            }
+            LOG.info("run cancel: runId={} actor={} (was WAITING)", runId, actor.value());
+            return;
+        }
         boolean ok = repository.markCancelRequested(runId);
         if (!ok) {
             throw new RunNotFoundException(runId);
         }
-        LOG.info("run cancel: runId={} actor={}", runId, actor.value());
+        LOG.info("run cancel: runId={} actor={} (RUNNING; flag set)", runId, actor.value());
     }
 
     @Override

@@ -10,7 +10,6 @@ import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.event.ContextRefreshedEvent;
 import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Component;
@@ -39,14 +38,19 @@ public class RunDispatcher {
 
     private static final Logger LOG = LoggerFactory.getLogger(RunDispatcher.class);
 
+    /** 兜底轮询间隔（spec §D2 / ADR-0006：5s 兜底轮询）。M3 写死常量；M6 入 system_setting。 */
+    private static final long FALLBACK_INTERVAL_SECONDS = 5L;
+    /** 单次运行最大时长（spec §容量：30 分钟）。 */
+    private static final long MAX_DURATION_MS = TimeUnit.MINUTES.toMillis(30);
+    /** 单次运行最大页数（spec §容量：200）。 */
+    private static final int MAX_PAGES = 200;
+    /** 单次运行最大结果数（spec §容量：10,000）。 */
+    private static final int MAX_RECORDS = 10_000;
+
     private final LanePool lanePool;
     private final RunRepository repository;
     private final RunExecutor executor;
     private final RunPageHandleProvider pageHandleProvider;
-    private final long fallbackIntervalSeconds;
-    private final long maxDurationMs;
-    private final int maxPages;
-    private final int maxRecords;
 
     private volatile boolean started;
     private ScheduledExecutorService scheduler;
@@ -56,11 +60,7 @@ public class RunDispatcher {
             @org.springframework.beans.factory.annotation.Qualifier("runLanePool") LanePool runLanePool,
             RunRepository repository,
             RunExecutor executor,
-            RunPageHandleProvider pageHandleProvider,
-            @Value("${run.lane-pool.fallback-seconds:5}") long fallbackSeconds,
-            @Value("${run.limits.max-duration-minutes:30}") long maxDurationMinutes,
-            @Value("${run.limits.max-pages:200}") int maxPages,
-            @Value("${run.limits.max-records:10000}") int maxRecords) {
+            RunPageHandleProvider pageHandleProvider) {
         this.lanePool = runLanePool;
         this.repository = repository;
         this.executor = executor;
@@ -73,25 +73,14 @@ public class RunDispatcher {
                     }
                 }
                 : pageHandleProvider;
-        this.fallbackIntervalSeconds = fallbackSeconds > 0 ? fallbackSeconds : 5;
-        this.maxDurationMs = maxDurationMinutes > 0
-                ? TimeUnit.MINUTES.toMillis(maxDurationMinutes)
-                : TimeUnit.MINUTES.toMillis(30);
-        this.maxPages = maxPages > 0 ? maxPages : 200;
-        this.maxRecords = maxRecords > 0 ? maxRecords : 10_000;
     }
 
     /** 兼容 M3-2 单元测试 / 旧调用点：pageHandleProvider 走 no-op（M3-3 路径必须显式注入）。 */
     public RunDispatcher(
             @org.springframework.beans.factory.annotation.Qualifier("runLanePool") LanePool runLanePool,
             RunRepository repository,
-            RunExecutor executor,
-            @Value("${run.lane-pool.fallback-seconds:5}") long fallbackSeconds,
-            @Value("${run.limits.max-duration-minutes:30}") long maxDurationMinutes,
-            @Value("${run.limits.max-pages:200}") int maxPages,
-            @Value("${run.limits.max-records:10000}") int maxRecords) {
-        this(runLanePool, repository, executor, null, fallbackSeconds, maxDurationMinutes,
-                maxPages, maxRecords);
+            RunExecutor executor) {
+        this(runLanePool, repository, executor, null);
     }
 
     /** Spring 上下文就绪后启动兜底轮询；run 接收新 run 前必须就绪（{@code @Order} 控制）。 */
@@ -107,8 +96,8 @@ public class RunDispatcher {
             return t;
         });
         scheduler.scheduleWithFixedDelay(this::safeDispatch,
-                fallbackIntervalSeconds, fallbackIntervalSeconds, TimeUnit.SECONDS);
-        LOG.info("run dispatcher started: fallback={}s", fallbackIntervalSeconds);
+                FALLBACK_INTERVAL_SECONDS, FALLBACK_INTERVAL_SECONDS, TimeUnit.SECONDS);
+        LOG.info("run dispatcher started: fallback={}s", FALLBACK_INTERVAL_SECONDS);
     }
 
     @PreDestroy
@@ -186,9 +175,9 @@ public class RunDispatcher {
         }
         RunExecutionContext context = new RunExecutionContext(
                 System.currentTimeMillis(),
-                maxDurationMs,
-                maxPages,
-                maxRecords,
+                MAX_DURATION_MS,
+                MAX_PAGES,
+                MAX_RECORDS,
                 pageHandle);
         LeaseNotifier notifier = new LeaseNotifier(this);
         NotifyingLease notifying = new NotifyingLease(lease, notifier, "run-" + rec.runId());

@@ -78,13 +78,8 @@ public class RunModuleConfig {
     public RunDispatcher runDispatcher(LanePool runLanePool,
                                        RunRepository repository,
                                        RunExecutor executor,
-                                       RunPageHandleProvider pageHandleProvider,
-                                       @Value("${run.lane-pool.fallback-seconds:5}") long fallbackSeconds,
-                                       @Value("${run.limits.max-duration-minutes:30}") long maxDurationMinutes,
-                                       @Value("${run.limits.max-pages:200}") int maxPages,
-                                       @Value("${run.limits.max-records:10000}") int maxRecords) {
-        return new RunDispatcher(runLanePool, repository, executor, pageHandleProvider,
-                fallbackSeconds, maxDurationMinutes, maxPages, maxRecords);
+                                       RunPageHandleProvider pageHandleProvider) {
+        return new RunDispatcher(runLanePool, repository, executor, pageHandleProvider);
     }
 
     /**

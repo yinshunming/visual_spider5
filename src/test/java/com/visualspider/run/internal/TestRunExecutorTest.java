@@ -146,6 +146,11 @@ class TestRunExecutorTest {
         }
 
         @Override
+        public int markCancelledIfWaiting(long runId) {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
         public boolean markTerminal(long runId, RunState status, StopReason stopReason) {
             // 测试 stub：在子类覆盖
             throw new UnsupportedOperationException();

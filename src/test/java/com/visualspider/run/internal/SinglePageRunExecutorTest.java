@@ -498,6 +498,7 @@ class SinglePageRunExecutorTest {
         @Override public long insertWaiting(long taskId, long ownerId, TaskSnapshot snapshot) { throw new UnsupportedOperationException(); }
         @Override public Optional<RunRecord> claimOldestWaiting() { throw new UnsupportedOperationException(); }
         @Override public boolean markCancelRequested(long runId) { throw new UnsupportedOperationException(); }
+        @Override public int markCancelledIfWaiting(long runId) { throw new UnsupportedOperationException(); }
         @Override public int markAllActiveInterrupted() { throw new UnsupportedOperationException(); }
         @Override public List<com.visualspider.run.spi.RunSummary> listByOwner(Long ownerId, com.visualspider.run.spi.RunFilter filter) { throw new UnsupportedOperationException(); }
         @Override public com.visualspider.run.spi.Page<com.visualspider.run.spi.RunSummary> pageByOwner(Long ownerId, com.visualspider.run.spi.RunFilter filter) { throw new UnsupportedOperationException(); }

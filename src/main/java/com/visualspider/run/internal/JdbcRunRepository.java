@@ -122,6 +122,14 @@ public class JdbcRunRepository implements RunRepository {
     }
 
     @Override
+    public int markCancelledIfWaiting(long runId) {
+        return jdbc.update(
+                "UPDATE collection_run SET status='CANCELLED', stop_reason='USER_CANCEL', "
+                        + "finished_at=now() WHERE id=? AND status='WAITING'",
+                runId);
+    }
+
+    @Override
     public boolean markTerminal(long runId, RunState status, StopReason stopReason) {
         int rows = jdbc.update(
                 "UPDATE collection_run SET status=?, stop_reason=?, finished_at=now() "

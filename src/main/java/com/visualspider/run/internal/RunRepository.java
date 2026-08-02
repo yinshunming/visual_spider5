@@ -52,6 +52,12 @@ public interface RunRepository {
     /** 写入 cancel_requested + 终态（cancel 协作式；执行器读取后写终态）。 */
     boolean markCancelRequested(long runId);
 
+    /**
+     * 排队中取消（spec §D10 迁移图 WAITING -> CANCELLED）：原子翻 status=CANCELLED +
+     * stop_reason=USER_CANCEL + finished_at=now()。仅当 status='WAITING' 时命中，返回影响行数。
+     */
+    int markCancelledIfWaiting(long runId);
+
     /** 写终态：status + stop_reason + finished_at + 计数（执行器在收尾调用）。 */
     boolean markTerminal(long runId, RunState status, StopReason stopReason);
 

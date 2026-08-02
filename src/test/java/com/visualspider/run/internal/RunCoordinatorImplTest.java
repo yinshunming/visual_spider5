@@ -203,14 +203,17 @@ class RunCoordinatorImplTest {
     // ---------- cancel ----------
 
     @Test
-    @DisplayName("cancel：WAITING run → 标记 cancel_requested；非 FAILED/SUCCESS 等终态")
-    void cancelWaitingRunMarksCancelRequested() {
+    @DisplayName("cancel：WAITING run 直接翻 CANCELLED + USER_CANCEL（spec §D10 迁移图）")
+    void cancelWaitingFlipsTerminal() {
         long taskId = taskCatalog.putReady(1L, "demo");
         RunSummary created = coordinator.start(taskId, new ActorId(1L));
+
         coordinator.cancel(created.runId(), new ActorId(1L));
 
         RunRepository.RunRecord rec = repository.byId(created.runId());
-        assertThat(rec.cancelRequested()).isTrue();
+        assertThat(rec.status()).isEqualTo(RunState.CANCELLED);
+        assertThat(rec.stopReason()).isEqualTo(StopReason.USER_CANCEL);
+        assertThat(rec.finishedAt()).isNotNull();
     }
 
     @Test
@@ -386,6 +389,19 @@ class RunCoordinatorImplTest {
                     r.stopReason(), true, r.pageCount(), r.recordCountFinal(), r.failCount(),
                     r.snapshot(), r.createdAt(), r.startedAt(), r.finishedAt()));
             return true;
+        }
+
+        @Override
+        public int markCancelledIfWaiting(long runId) {
+            RunRecord r = byId.get(runId);
+            if (r == null || r.status() != RunState.WAITING) {
+                return 0;
+            }
+            byId.put(runId, new RunRecord(r.runId(), r.taskId(), r.ownerId(),
+                    RunState.CANCELLED, StopReason.USER_CANCEL, r.cancelRequested(),
+                    r.pageCount(), r.recordCountFinal(), r.failCount(),
+                    r.snapshot(), r.createdAt(), r.startedAt(), OffsetDateTime.now()));
+            return 1;
         }
 
         @Override
