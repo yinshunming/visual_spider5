@@ -144,6 +144,25 @@ public final class RunLanePool implements LanePool, AutoCloseable {
         return -1;
     }
 
+    /** 包级私有：仅 {@code RunPageHandleProvider} 用；从 lease 反查 lane 创建 per-run BrowserContext。 */
+    BrowserLane laneOf(Lease lease) {
+        if (!(lease instanceof DefaultLease dl)) {
+            return null;
+        }
+        if (dl.released.get()) {
+            return null;
+        }
+        return dl.lane;
+    }
+
+    /** 包级私有：仅装配使用，按 lane 引用查询 lane（用于构造 per-run handle 时已知 lane 而无 lease 的场景）。 */
+    BrowserLane laneByIndex(int index) {
+        if (index < 0 || index >= allLanes.size()) {
+            return null;
+        }
+        return allLanes.get(index);
+    }
+
     /** lease 内部类：持有 lane 引用；close 触发归还；isOpen 反映状态。 */
     private static final class DefaultLease implements Lease {
         private final BrowserLane lane;

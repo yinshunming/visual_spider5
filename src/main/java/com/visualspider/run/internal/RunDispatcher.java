@@ -2,6 +2,7 @@ package com.visualspider.run.internal;
 
 import com.visualspider.run.spi.RunExecutor;
 import com.visualspider.run.spi.RunExecutionContext;
+import com.visualspider.run.spi.RunPageHandle;
 import com.visualspider.visualbrowser.spi.LanePool;
 import com.visualspider.visualbrowser.spi.Lease;
 import java.util.concurrent.Executors;
@@ -41,6 +42,7 @@ public class RunDispatcher {
     private final LanePool lanePool;
     private final RunRepository repository;
     private final RunExecutor executor;
+    private final RunPageHandleProvider pageHandleProvider;
     private final long fallbackIntervalSeconds;
     private final long maxDurationMs;
     private final int maxPages;
@@ -49,6 +51,37 @@ public class RunDispatcher {
     private volatile boolean started;
     private ScheduledExecutorService scheduler;
 
+    @org.springframework.beans.factory.annotation.Autowired
+    public RunDispatcher(
+            @org.springframework.beans.factory.annotation.Qualifier("runLanePool") LanePool runLanePool,
+            RunRepository repository,
+            RunExecutor executor,
+            RunPageHandleProvider pageHandleProvider,
+            @Value("${run.lane-pool.fallback-seconds:5}") long fallbackSeconds,
+            @Value("${run.limits.max-duration-minutes:30}") long maxDurationMinutes,
+            @Value("${run.limits.max-pages:200}") int maxPages,
+            @Value("${run.limits.max-records:10000}") int maxRecords) {
+        this.lanePool = runLanePool;
+        this.repository = repository;
+        this.executor = executor;
+        this.pageHandleProvider = pageHandleProvider == null
+                ? new RunPageHandleProvider() {
+                    @Override
+                    public RunPageHandle openFor(Lease lease, long runId) {
+                        throw new IllegalStateException(
+                                "RunPageHandleProvider 未注入（M3-3 路径默认 no-op；测试可显式注入 fake）");
+                    }
+                }
+                : pageHandleProvider;
+        this.fallbackIntervalSeconds = fallbackSeconds > 0 ? fallbackSeconds : 5;
+        this.maxDurationMs = maxDurationMinutes > 0
+                ? TimeUnit.MINUTES.toMillis(maxDurationMinutes)
+                : TimeUnit.MINUTES.toMillis(30);
+        this.maxPages = maxPages > 0 ? maxPages : 200;
+        this.maxRecords = maxRecords > 0 ? maxRecords : 10_000;
+    }
+
+    /** 兼容 M3-2 单元测试 / 旧调用点：pageHandleProvider 走 no-op（M3-3 路径必须显式注入）。 */
     public RunDispatcher(
             @org.springframework.beans.factory.annotation.Qualifier("runLanePool") LanePool runLanePool,
             RunRepository repository,
@@ -57,15 +90,8 @@ public class RunDispatcher {
             @Value("${run.limits.max-duration-minutes:30}") long maxDurationMinutes,
             @Value("${run.limits.max-pages:200}") int maxPages,
             @Value("${run.limits.max-records:10000}") int maxRecords) {
-        this.lanePool = runLanePool;
-        this.repository = repository;
-        this.executor = executor;
-        this.fallbackIntervalSeconds = fallbackSeconds > 0 ? fallbackSeconds : 5;
-        this.maxDurationMs = maxDurationMinutes > 0
-                ? TimeUnit.MINUTES.toMillis(maxDurationMinutes)
-                : TimeUnit.MINUTES.toMillis(30);
-        this.maxPages = maxPages > 0 ? maxPages : 200;
-        this.maxRecords = maxRecords > 0 ? maxRecords : 10000;
+        this(runLanePool, repository, executor, null, fallbackSeconds, maxDurationMinutes,
+                maxPages, maxRecords);
     }
 
     /** Spring 上下文就绪后启动兜底轮询；run 接收新 run 前必须就绪（{@code @Order} 控制）。 */
@@ -142,18 +168,31 @@ public class RunDispatcher {
             // pool full → 中断；兜底轮询下次再来
             throw ex;
         }
+        RunPageHandle pageHandle = null;
+        try {
+            pageHandle = pageHandleProvider.openFor(lease, rec.runId());
+        } catch (RuntimeException ex) {
+            // Browser 启动失败（spec §D9 BROWSER_START_FAILED）；lease 仍需归还
+            LOG.error("page handle open failed runId={}", rec.runId(), ex);
+            try {
+                repository.markTerminal(rec.runId(),
+                        com.visualspider.run.spi.RunState.FAILED,
+                        com.visualspider.run.spi.StopReason.BROWSER_START_FAILED);
+            } catch (RuntimeException ignored) {
+                // 写回失败 → 下次启动恢复扫描兜底
+            }
+            releaseAndDispatch(lease, "run-" + rec.runId());
+            return;
+        }
         RunExecutionContext context = new RunExecutionContext(
                 System.currentTimeMillis(),
                 maxDurationMs,
                 maxPages,
-                maxRecords);
-        // lane 释放回调：触发下一次派发
+                maxRecords,
+                pageHandle);
         LeaseNotifier notifier = new LeaseNotifier(this);
         NotifyingLease notifying = new NotifyingLease(lease, notifier, "run-" + rec.runId());
-        // 提交到 lane 固定线程
         try {
-            // 不持有 Playwright / Page；当前 M3-2 stub 不真正异步，使用同步 submitFuture 风格。
-            // RunLanePool 内每个 BrowserLane 都有固定线程（生产路径）；这里走同步执行 + lease close。
             executor.execute(context, rec.runId());
         } catch (RuntimeException ex) {
             LOG.error("run execution failed runId={}", rec.runId(), ex);
@@ -167,6 +206,15 @@ public class RunDispatcher {
         } finally {
             notifying.close();
         }
+    }
+
+    /** lane 归还并触发下一轮派发。包级私有：兜底 BROWSER_START_FAILED 用。 */
+    private void releaseAndDispatch(Lease lease, String runKey) {
+        try {
+            lease.close();
+        } catch (RuntimeException ignored) {
+        }
+        onLaneReleased(runKey);
     }
 
     /** Lease 释放回调（事件驱动派发的第二个事件源）。 */

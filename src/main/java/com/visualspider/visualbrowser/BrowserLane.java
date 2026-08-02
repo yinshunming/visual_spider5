@@ -168,6 +168,28 @@ public final class BrowserLane implements AutoCloseable {
         return resources == null ? null : resources.page;
     }
 
+    /**
+     * 为单次运行在 lane 线程上创建独立、非持久化的 {@link BrowserContext} + Page
+     * （spec §D9：每次运行独立 BrowserContext）。
+     *
+     * <p>调用方负责在 run 结束按 Page → BrowserContext 顺序释放
+     * （{@code DefaultRunPageHandle.close} 负责）。lane 未启动或资源未初始化抛
+     * {@link IllegalStateException}。
+     *
+     * <p><b>线程亲和</b>：返回的 {@code Page} 仅在 lane 线程上使用；调用方应通过
+     * {@link #submit(java.util.function.Supplier)} 提交操作。
+     */
+    public Page createRunPage() {
+        if (resources == null) {
+            throw new IllegalStateException("BrowserLane 资源未初始化");
+        }
+        return submit(() -> {
+            BrowserContext ctx = resources.browser.newContext(
+                    new Browser.NewContextOptions().setViewportSize(1280, 720));
+            return ctx.newPage();
+        }).join();
+    }
+
     @Override
     public void close() {
         closed = true;

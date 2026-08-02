@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.visualspider.run.spi.RunExecutionContext;
 import com.visualspider.run.spi.RunExecutor;
+import com.visualspider.run.spi.RunPageHandle;
 import com.visualspider.run.spi.RunState;
 import com.visualspider.run.spi.StopReason;
 import com.visualspider.task.domain.TaskDefinition;
@@ -12,6 +13,7 @@ import com.visualspider.task.domain.TaskSnapshot;
 import com.visualspider.task.domain.Viewport;
 import com.visualspider.visualbrowser.spi.LanePool;
 import com.visualspider.visualbrowser.spi.Lease;
+import com.visualspider.run.internal.testutil.FakeRunPageHandle;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Deque;
@@ -44,6 +46,7 @@ class RunDispatcherTest {
     private FakeLanePool lanePool;
     private RecordingRepository repository;
     private RecordingExecutor executor;
+    private FakePageHandleProvider pageHandleProvider;
     private RunDispatcher dispatcher;
 
     @BeforeEach
@@ -51,7 +54,8 @@ class RunDispatcherTest {
         lanePool = new FakeLanePool(RunLanePool.DEFAULT_CAPACITY);
         repository = new RecordingRepository();
         executor = new RecordingExecutor();
-        dispatcher = new RunDispatcher(lanePool, repository, executor,
+        pageHandleProvider = new FakePageHandleProvider();
+        dispatcher = new RunDispatcher(lanePool, repository, executor, pageHandleProvider,
                 1L, 30L, 200, 10000);
     }
 
@@ -307,6 +311,18 @@ class RunDispatcherTest {
             if (failOnRunId != null && failOnRunId == runId) {
                 throw new RuntimeException("synthetic failure");
             }
+        }
+    }
+
+    /** fake page handle provider：每次返回新的 FakeRunPageHandle。 */
+    private static final class FakePageHandleProvider implements RunPageHandleProvider {
+        final List<RunPageHandle> handles = new ArrayList<>();
+
+        @Override
+        public RunPageHandle openFor(Lease lease, long runId) {
+            FakeRunPageHandle h = new FakeRunPageHandle();
+            handles.add(h);
+            return h;
         }
     }
 }

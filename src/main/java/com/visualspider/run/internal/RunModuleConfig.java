@@ -17,7 +17,7 @@ import org.springframework.core.Ordered;
 import org.springframework.core.annotation.Order;
 
 /**
- * run 模块 Spring 装配（M3-2 #24 / ADR-0004 / ADR-0006）。
+ * run 模块 Spring 装配（M3-3 #25 / M3-2 #24 / ADR-0004 / ADR-0006）。
  *
  * <p>装配：
  * <ul>
@@ -25,8 +25,9 @@ import org.springframework.core.annotation.Order;
  *   <li>{@code runRecovery}：启动扫描遗留 run → INTERRUPTED（{@code @Order(HIGHEST+10)}，
  *       早于 dispatcher 启动）</li>
  *   <li>{@code runCoordinator}：start / cancel / get / list / progress</li>
+ *   <li>{@code runPageHandleProvider}：lease → per-run RunPageHandle 工厂</li>
  *   <li>{@code runDispatcher}：事件驱动 + 5s 兜底 + CAS 翻 WAITING → RUNNING</li>
- *   <li>{@code runExecutor}（stub）：M3-2 写 1 条假结果即返回；M3-3 替换为真实执行</li>
+ *   <li>{@code runExecutor}：{@code SinglePageRunExecutor}（M3-3 替换 M3-2 stub）</li>
  * </ul>
  *
  * <p>队列约定（ADR-0006）：{@code collection_run.status='WAITING'} 即队列；不在 JVM
@@ -36,7 +37,7 @@ import org.springframework.core.annotation.Order;
 public class RunModuleConfig {
 
     @Bean(destroyMethod = "close")
-    public LanePool runLanePool(
+    public RunLanePool runLanePool(
             @Value("${run.lane-pool.capacity:3}") int capacity) {
         int cap = capacity > 0 ? capacity : RunLanePool.DEFAULT_CAPACITY;
         return new RunLanePool(cap, i -> new BrowserLane());
@@ -59,8 +60,16 @@ public class RunModuleConfig {
     }
 
     @Bean
-    public RunExecutor runExecutor(RunRepository repository) {
-        return new TestRunExecutor(repository);
+    public RunPageHandleProvider runPageHandleProvider(RunLanePool runLanePool) {
+        return new DefaultRunPageHandleProvider(runLanePool);
+    }
+
+    @Bean
+    public RunExecutor runExecutor(RunRepository repository,
+                                   com.visualspider.result.spi.RunResultSink resultSink,
+                                   com.visualspider.extraction.spi.ExtractionPreview extraction,
+                                   com.visualspider.visualbrowser.spi.TargetUrlPolicy urlPolicy) {
+        return new SinglePageRunExecutor(repository, resultSink, extraction, urlPolicy);
     }
 
     @Bean(initMethod = "onContextRefreshed", destroyMethod = "shutdown")
@@ -69,11 +78,12 @@ public class RunModuleConfig {
     public RunDispatcher runDispatcher(LanePool runLanePool,
                                        RunRepository repository,
                                        RunExecutor executor,
+                                       RunPageHandleProvider pageHandleProvider,
                                        @Value("${run.lane-pool.fallback-seconds:5}") long fallbackSeconds,
                                        @Value("${run.limits.max-duration-minutes:30}") long maxDurationMinutes,
                                        @Value("${run.limits.max-pages:200}") int maxPages,
                                        @Value("${run.limits.max-records:10000}") int maxRecords) {
-        return new RunDispatcher(runLanePool, repository, executor,
+        return new RunDispatcher(runLanePool, repository, executor, pageHandleProvider,
                 fallbackSeconds, maxDurationMinutes, maxPages, maxRecords);
     }
 

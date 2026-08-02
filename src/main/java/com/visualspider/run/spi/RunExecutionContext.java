@@ -22,12 +22,23 @@ public final class RunExecutionContext {
     private final int maxRecords;
     private final AtomicInteger pageCount = new AtomicInteger(0);
     private final AtomicInteger recordCountFinal = new AtomicInteger(0);
+    /**
+     * 可选：运行 lane 上的 Page / BrowserContext 封装。M3-2 stub（{@code TestRunExecutor}）
+     * 不需要可为空；M3-3 {@code SinglePageRunExecutor} 必读。
+     */
+    private final RunPageHandle pageHandle;
 
     public RunExecutionContext(long startedAtMs, long maxDurationMs, int maxPages, int maxRecords) {
+        this(startedAtMs, maxDurationMs, maxPages, maxRecords, null);
+    }
+
+    public RunExecutionContext(long startedAtMs, long maxDurationMs, int maxPages, int maxRecords,
+                               RunPageHandle pageHandle) {
         this.startedAtMs = startedAtMs;
         this.maxDurationMs = maxDurationMs;
         this.maxPages = maxPages;
         this.maxRecords = maxRecords;
+        this.pageHandle = pageHandle;
     }
 
     /** 标记取消。多次调用幂等；{@code RunCoordinator.cancel} 调用。 */
@@ -80,5 +91,10 @@ public final class RunExecutionContext {
 
     public long maxDurationMs() {
         return maxDurationMs;
+    }
+
+    /** 当前 run 绑定的 lane Page 句柄；未注入时为 {@code null}（stub 执行器路径）。 */
+    public RunPageHandle pageHandle() {
+        return pageHandle;
     }
 }
