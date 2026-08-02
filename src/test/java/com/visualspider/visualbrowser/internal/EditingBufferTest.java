@@ -44,7 +44,7 @@ class EditingBufferTest {
         currentDraft = new TaskDraft(11L, 1L, "demo", new SinglePage(),
                 TaskStatus.DRAFT, 1, version.get(),
                 new TaskDefinition(1, new SinglePage(), "http://example.com/",
-                        Viewport.DEFAULT, List.of()),
+                        Viewport.DEFAULT, null, List.of()),
                 OffsetDateTime.now());
         catalog = new FakeTaskCatalog(currentDraft);
         buffer = new EditingBuffer(catalog, clock, scheduler, 60L, "build/test-logs");
@@ -98,7 +98,7 @@ class EditingBufferTest {
 
     private static TaskDefinition withStartUrl(TaskDefinition original, String url) {
         return new TaskDefinition(original.schemaVersion(), original.mode(), url,
-                original.viewport(), original.fields());
+                original.viewport(), original.waitPolicy(), original.fields());
     }
 
     /**
@@ -143,7 +143,7 @@ class EditingBufferTest {
                     Long.toString(taskId), new SinglePage(), TaskStatus.DRAFT,
                     draft == null ? 1 : draft.schemaVersion(),
                     expectedVersion + 1, draft == null
-                            ? new TaskDefinition(1, new SinglePage(), "http://example.com/", Viewport.DEFAULT, List.of())
+                            ? new TaskDefinition(1, new SinglePage(), "http://example.com/", Viewport.DEFAULT, null, List.of())
                             : draft, OffsetDateTime.now());
         }
 

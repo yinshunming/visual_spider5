@@ -71,4 +71,13 @@ class BusinessErrorCodeTest {
         assertThat(BusinessErrorCode.TASK_NOT_DRAFT.httpStatus()).isEqualTo(409);
         assertThat(BusinessErrorCode.TASK_NOT_DRAFT.code()).isEqualTo("TASK_NOT_DRAFT");
     }
+
+    @Test
+    @DisplayName("TASK_INVALID_WAIT_POLICY 是 400（M3 spec §D19）")
+    void taskInvalidWaitPolicyIs400() {
+        assertThat(BusinessErrorCode.TASK_INVALID_WAIT_POLICY.httpStatus()).isEqualTo(400);
+        assertThat(BusinessErrorCode.TASK_INVALID_WAIT_POLICY.code())
+                .isEqualTo("TASK_INVALID_WAIT_POLICY");
+        assertThat(BusinessErrorCode.TASK_INVALID_WAIT_POLICY.userMessage()).isNotBlank();
+    }
 }

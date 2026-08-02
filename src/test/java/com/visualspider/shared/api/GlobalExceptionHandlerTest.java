@@ -13,6 +13,7 @@ import com.visualspider.task.domain.exceptions.StaleTaskVersionException;
 import com.visualspider.task.domain.exceptions.TaskNotFoundException;
 import jakarta.validation.ConstraintViolation;
 import jakarta.validation.ConstraintViolationException;
+import java.util.List;
 import java.util.Set;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -92,6 +93,18 @@ class GlobalExceptionHandlerTest {
         ResponseEntity<ApiError> res = handler.handleUserNotFound(new UserNotFoundException(99L));
         assertThat(res.getStatusCode().value()).isEqualTo(404);
         assertThat(res.getBody().code()).isEqualTo("RESOURCE_NOT_FOUND");
+    }
+
+    @Test
+    @DisplayName("TaskInvalidDefinitionException 含 TASK_INVALID_WAIT_POLICY → 400 + TASK_INVALID_WAIT_POLICY")
+    void taskInvalidDefinitionWaitPolicy() {
+        var err = new com.visualspider.task.domain.ReadinessReport.ReadinessError(
+                "TASK_INVALID_WAIT_POLICY", "额外等待时间必须 0-5 秒", "waitPolicy.extraWaitSeconds");
+        var ex = new com.visualspider.task.domain.exceptions.TaskInvalidDefinitionException(List.of(err));
+        ResponseEntity<ApiError> res = handler.handleTaskInvalidDefinition(ex);
+        assertThat(res.getStatusCode().value()).isEqualTo(400);
+        assertThat(res.getBody().code()).isEqualTo("TASK_INVALID_WAIT_POLICY");
+        assertThat(res.getBody().fieldPath()).isEqualTo("waitPolicy.extraWaitSeconds");
     }
 
     @Test

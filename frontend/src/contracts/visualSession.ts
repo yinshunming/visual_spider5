@@ -13,10 +13,26 @@ export type TaskStatus = 'DRAFT' | 'READY'
 export type TaskMode = 'SINGLE_PAGE' | 'LIST'
 export type LifecycleState = 'ACTIVE' | 'IDLE_CLOSING' | 'MAX_REACHED_CLOSING' | 'USER_CLOSING' | 'CLOSED'
 
+/**
+ * M3 新增：字段选择器类型（spec §D6 / §D7）。可空 → 服务端默认 CSS。
+ * 前端编辑器应保持 selectorType 与 selector 同步（CSS 选择器用 CSS；XPath 用 XPATH）。
+ */
+export type SelectorType = 'CSS' | 'XPATH'
+
+/**
+ * M3 新增：任务等待策略（spec §D6）。
+ * {@code extraWaitSeconds} 必为 0-5；前端校验与服务端校验双重把关。
+ */
+export interface WaitPolicy {
+  extraWaitSeconds: number  // 0-5
+}
+
 export interface FieldDefinition {
   name: string
   source: FieldSource
   selector?: string
+  /** M3 新增：可空；服务端默认 CSS。 */
+  selectorType?: SelectorType
   attributeName?: string
   resultType: ResultType
   trim: TrimPolicy
@@ -29,6 +45,8 @@ export interface TaskDefinition {
   mode: TaskMode
   startUrl: string
   viewport: { width: number; height: number }
+  /** M3 新增：可空；服务端默认 WaitPolicy(0)。 */
+  waitPolicy?: WaitPolicy
   fields: FieldDefinition[]
 }
 

@@ -144,10 +144,14 @@ public final class VisualSession implements AutoCloseable {
     }
 
     /**
-     * 在当前 lane/Page 上对 definition 执行预览（M2-3 #19）。
+     * 在当前 lane/Page 上对 definition 执行预览（M2-3 #19 / M3 spec §D7）。
      *
      * <p>在 lane 线程内直接查询 DOM 构造 {@link ExtractionPreview.DomState}，再委托
      * {@link ExtractionPreview}（与 M3 运行共用同一实现）。不写库。
+     *
+     * <p>M3 扩展：实现 {@link ExtractionPreview.DomState#query(String, com.visualspider.task.domain.SelectorType)}
+     * 按类型分发（CSS → {@code document.querySelectorAll}，XPath → {@code document.evaluate}）。
+     * 与 {@code PlaywrightControl.validateSelector} 使用同一段 JS 模式（仅做节点摘要拉取）。
      */
     @SuppressWarnings("unchecked")
     public PreviewResult preview(TaskDefinition definition, ExtractionPreview extraction) {
@@ -159,17 +163,43 @@ public final class VisualSession implements AutoCloseable {
                 }
 
                 @Override
-                public List<ExtractionPreview.Node> querySelectorAll(String selector) {
-                    String js = "(sel) => {"
-                            + "  const nodes = Array.from(document.querySelectorAll(sel));"
-                            + "  return nodes.map(el => {"
+                public List<ExtractionPreview.Node> query(String selector,
+                                                          com.visualspider.task.domain.SelectorType type) {
+                    String js = "(args) => {"
+                            + "  const sel = args.sel, t = args.type;"
+                            + "  let raw = [];"
+                            + "  try {"
+                            + "    if (t === 'xpath') {"
+                            + "      const xr = document.evaluate(sel, document, null, "
+                            + "          XPathResult.ORDERED_NODE_SNAPSHOT_TYPE, null);"
+                            + "      for (let i = 0; i < xr.snapshotLength; i++) raw.push(xr.snapshotItem(i));"
+                            + "    } else {"
+                            + "      raw = Array.from(document.querySelectorAll(sel));"
+                            + "    }"
+                            + "  } catch (e) {"
+                            + "    // CSS 语法错误 → M2 SELECTOR_SYNTAX_INVALID 路径（M3 spec §D7 仍允许 CSS 字段异常）"
+                            + "    return { error: String(e) };"
+                            + "  }"
+                            + "  return raw.filter(n => n && n.nodeType === 1).map(el => {"
                             + "    const attrs = {};"
                             + "    for (const a of el.attributes) attrs[a.name] = a.value;"
                             + "    return { tagName: el.tagName, id: el.id || '', className: el.className || '',"
                             + "      textContent: (el.textContent || '').substring(0, 500), attributes: attrs };"
                             + "  });"
                             + "}";
-                    List<Map<String, Object>> maps = (List<Map<String, Object>>) lane.page().evaluate(js, selector);
+                    Object result = lane.page().evaluate(js,
+                            java.util.Map.of("sel", selector, "type", type == null
+                                    ? com.visualspider.task.domain.SelectorType.CSS.name().toLowerCase()
+                                    : type.name().toLowerCase()));
+                    if (result instanceof java.util.Map) {
+                        // 选择器语法错误；抛给调用方 → ExtractionPreviewImpl.readRaw 捕到并记 SELECTOR_SYNTAX_INVALID。
+                        java.util.Map<?, ?> errMap = (java.util.Map<?, ?>) result;
+                        Object err = errMap.get("error");
+                        if (err != null) {
+                            throw new RuntimeException(String.valueOf(err));
+                        }
+                    }
+                    List<Map<String, Object>> maps = (List<Map<String, Object>>) result;
                     List<ExtractionPreview.Node> nodes = new ArrayList<>();
                     for (Map<String, Object> m : maps) {
                         nodes.add(new ExtractionPreview.Node(

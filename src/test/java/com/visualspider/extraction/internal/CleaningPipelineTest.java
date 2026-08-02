@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.visualspider.task.domain.FieldDefinition;
 import com.visualspider.task.domain.FieldSource;
 import com.visualspider.task.domain.ResultType;
+import com.visualspider.task.domain.SelectorType;
 import com.visualspider.task.domain.TrimPolicy;
 import org.junit.jupiter.api.Test;
 
@@ -77,7 +78,7 @@ class CleaningPipelineTest {
     @Test
     void preserveTrimKeepsWhitespace() {
         FieldDefinition field = new FieldDefinition("k", FieldSource.VISIBLE_TEXT, null, null,
-                ResultType.TEXT, TrimPolicy.PRESERVE, null, false);
+                SelectorType.CSS, ResultType.TEXT, TrimPolicy.PRESERVE, null, false);
         CleaningPipeline.ResultCollector collector = new CleaningPipeline.ResultCollector();
         CleaningPipeline.Result r = pipeline.clean("  hello  ", field, collector);
         assertThat(r.cleanedValue).isEqualTo("  hello  ");
@@ -85,16 +86,16 @@ class CleaningPipelineTest {
 
     private static FieldDefinition textField(String name, String ignoreSelector, boolean ignoreRequired, String regex) {
         return new FieldDefinition(name, FieldSource.VISIBLE_TEXT, "div", null,
-                ResultType.TEXT, TrimPolicy.TRIM, regex, false);
+                SelectorType.CSS, ResultType.TEXT, TrimPolicy.TRIM, regex, false);
     }
 
     private static FieldDefinition numberField() {
         return new FieldDefinition("price", FieldSource.VISIBLE_TEXT, "div", null,
-                ResultType.NUMBER, TrimPolicy.TRIM, null, false);
+                SelectorType.CSS, ResultType.NUMBER, TrimPolicy.TRIM, null, false);
     }
 
     private static FieldDefinition urlField() {
         return new FieldDefinition("href", FieldSource.LINK_URL, "a", null,
-                ResultType.URL, TrimPolicy.TRIM, null, false);
+                SelectorType.CSS, ResultType.URL, TrimPolicy.TRIM, null, false);
     }
 }

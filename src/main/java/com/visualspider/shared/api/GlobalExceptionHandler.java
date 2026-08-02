@@ -94,6 +94,7 @@ public class GlobalExceptionHandler {
             case "TASK_INVALID_FIELD_NAME" -> BusinessErrorCode.TASK_INVALID_FIELD_NAME;
             case "TASK_UNSUPPORTED_SCHEMA" -> BusinessErrorCode.TASK_UNSUPPORTED_SCHEMA;
             case "TASK_INVALID_MODE" -> BusinessErrorCode.TASK_INVALID_MODE;
+            case "TASK_INVALID_WAIT_POLICY" -> BusinessErrorCode.TASK_INVALID_WAIT_POLICY;
             default -> BusinessErrorCode.TASK_INVALID_DEFINITION;
         };
         return ResponseEntity.status(HttpStatus.BAD_REQUEST)

@@ -6,9 +6,11 @@ import com.visualspider.task.domain.FieldDefinition;
 import com.visualspider.task.domain.FieldSource;
 import com.visualspider.task.domain.ReadinessReport;
 import com.visualspider.task.domain.ReadinessReport.ReadinessError;
+import com.visualspider.task.domain.SelectorType;
 import com.visualspider.task.domain.TaskDefinition;
 import com.visualspider.task.domain.TaskDraft;
 import com.visualspider.task.domain.Viewport;
+import com.visualspider.task.domain.WaitPolicy;
 import com.visualspider.task.spi.TaskCatalog;
 import com.visualspider.task.spi.TaskReadiness;
 import java.net.URI;
@@ -65,6 +67,7 @@ public class TaskReadinessImpl implements TaskReadiness {
         }
         validateUrl(draft.startUrl(), errors);
         validateViewport(draft.viewport(), errors);
+        validateWaitPolicy(draft.waitPolicy(), errors);
         validateFields(draft.fields(), errors);
         return errors.isEmpty() ? ReadinessReport.success() : ReadinessReport.failure(errors);
     }
@@ -117,6 +120,27 @@ public class TaskReadinessImpl implements TaskReadiness {
                 || viewport.height() != Viewport.DEFAULT.height()) {
             errors.add(error(BusinessErrorCode.TASK_INVALID_VIEWPORT,
                     BusinessErrorCode.TASK_INVALID_VIEWPORT.userMessage(), "viewport"));
+        }
+    }
+
+    /**
+     * 校验 {@link WaitPolicy}：{@code extraWaitSeconds} 必须 0-5（M3 spec §D6）。
+     *
+     * <p>WaitPolicy 构造器已强制 0-5；此处作为防御性兜底，覆盖反序列化路径绕过构造器的极端场景
+     * （例如反射或未来 JSON 自定义反序列化）。{@code null} 由 {@link TaskDefinition} 紧凑构造器
+     * 默认填充 {@code WaitPolicy(0)}，故此处非空。
+     */
+    private void validateWaitPolicy(WaitPolicy waitPolicy, List<ReadinessError> errors) {
+        if (waitPolicy == null) {
+            errors.add(error(BusinessErrorCode.TASK_INVALID_WAIT_POLICY,
+                    BusinessErrorCode.TASK_INVALID_WAIT_POLICY.userMessage(),
+                    "waitPolicy.extraWaitSeconds"));
+            return;
+        }
+        int s = waitPolicy.extraWaitSeconds();
+        if (s < 0 || s > 5) {
+            errors.add(error(BusinessErrorCode.TASK_INVALID_WAIT_POLICY,
+                    "额外等待时间必须 0-5 秒；got " + s, "waitPolicy.extraWaitSeconds"));
         }
     }
 

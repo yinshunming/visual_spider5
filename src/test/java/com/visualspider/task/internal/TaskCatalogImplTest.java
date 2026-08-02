@@ -193,7 +193,7 @@ class TaskCatalogImplTest {
 
     private static TaskDefinition singlePage() {
         return new TaskDefinition(1, new TaskMode.SinglePage(),
-                "https://example.com", Viewport.DEFAULT, List.of());
+                "https://example.com", Viewport.DEFAULT, null, List.of());
     }
 
     private static TaskDraft newTaskDraft(long id, long ownerId) {

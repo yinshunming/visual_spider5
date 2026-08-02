@@ -6,6 +6,7 @@ import com.visualspider.shared.api.BusinessErrorCode;
 import com.visualspider.task.domain.FieldDefinition;
 import com.visualspider.task.domain.FieldSource;
 import com.visualspider.task.domain.ReadinessReport;
+import com.visualspider.task.domain.SelectorType;
 import com.visualspider.task.domain.TaskDefinition;
 import com.visualspider.task.domain.TaskMode.SinglePage;
 import com.visualspider.task.domain.TrimPolicy;
@@ -135,12 +136,13 @@ class TaskReadinessImplM2Test {
     }
 
     private static TaskDefinition definition(String startUrl, List<FieldDefinition> fields) {
-        return new TaskDefinition(1, new SinglePage(), startUrl, Viewport.DEFAULT, fields);
+        return new TaskDefinition(1, new SinglePage(), startUrl, Viewport.DEFAULT, null, fields);
     }
 
     private static FieldDefinition field(String name, String selector, String attribute,
                                           FieldSource source, String regex, ResultType resultType) {
         return new FieldDefinition(name, source, selector, attribute,
+                SelectorType.CSS,
                 resultType == null ? ResultType.TEXT : resultType,
                 TrimPolicy.TRIM, regex, false);
     }

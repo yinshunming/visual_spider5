@@ -8,6 +8,7 @@ import com.visualspider.extraction.spi.PreviewResult;
 import com.visualspider.extraction.spi.PreviewResult.FieldOutcome;
 import com.visualspider.task.domain.FieldDefinition;
 import com.visualspider.task.domain.FieldSource;
+import com.visualspider.task.domain.SelectorType;
 import com.visualspider.task.domain.TaskDefinition;
 import java.util.ArrayList;
 import java.util.List;
@@ -57,7 +58,10 @@ public final class ExtractionPreviewImpl implements ExtractionPreview {
         }
         List<Node> nodes;
         try {
-            nodes = domState.querySelectorAll(field.selector());
+            // M3 spec §D7：按 field.selectorType() 分发；修掉 M2 preview 对 XPath
+            // 字段误报 SELECTOR_SYNTAX_INVALID 的隐患。
+            SelectorType type = field.selectorType() == null ? SelectorType.CSS : field.selectorType();
+            nodes = domState.query(field.selector(), type);
         } catch (RuntimeException ex) {
             collector.add(field, DiagnosticCode.SELECTOR_SYNTAX_INVALID, "选择器语法错误: " + ex.getMessage());
             return null;
