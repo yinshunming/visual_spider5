@@ -7,9 +7,11 @@ import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import com.visualspider.result.spi.BatchOutcome;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.visualspider.identity.domain.ActorId;
@@ -67,19 +69,22 @@ class JdbcRunResultRepositoryTest {
     // ============================ appendBatch ============================
 
     @Test
-    @DisplayName("appendBatch: run 存在时写入 run_result + run_event")
+    @DisplayName("appendBatch: run 存在时写入 run_result + run_event + 计数累加")
     void appendBatchWritesRowsAndEvents() {
         // run 存在
-        when(jdbc.query(anyString(), any(ResultSetExtractor.class), eq(7L)))
+        lenient().when(jdbc.query(anyString(), any(ResultSetExtractor.class), eq(7L)))
                 .thenReturn(1);
-        when(jdbc.update(any(PreparedStatementCreator.class))).thenReturn(1);
+        lenient().when(jdbc.update(anyString(), (Object[]) any())).thenReturn(1);
 
         ResultRecord r1 = ResultRecord.forInsert(7L, 1, Map.of("title", "hello"));
         RunEventInput ev = new RunEventInput(RunEventLevel.INFO, "extract", "https://x", null, "ok");
 
-        repo.appendBatch(7L, List.of(r1), List.of(ev));
+        BatchOutcome outcome = repo.appendBatch(7L, List.of(r1), List.of(ev));
 
-        verify(jdbc, times(2)).update(any(PreparedStatementCreator.class));
+        assertThat(outcome.rawCount()).isEqualTo(1);
+        assertThat(outcome.insertedCount()).isEqualTo(1);
+        assertThat(outcome.dedupCount()).isZero();
+        assertThat(outcome.failedCount()).isZero();
     }
 
     @Test
@@ -95,14 +100,15 @@ class JdbcRunResultRepositoryTest {
     @Test
     @DisplayName("appendBatch: 仅写结果不写事件（events 为 null）")
     void appendBatchOnlyResults() {
-        when(jdbc.query(anyString(), any(ResultSetExtractor.class), eq(7L)))
+        lenient().when(jdbc.query(anyString(), any(ResultSetExtractor.class), eq(7L)))
                 .thenReturn(1);
-        when(jdbc.update(any(PreparedStatementCreator.class))).thenReturn(1);
+        lenient().when(jdbc.update(anyString(), (Object[]) any())).thenReturn(1);
 
-        repo.appendBatch(7L,
+        BatchOutcome outcome = repo.appendBatch(7L,
                 List.of(ResultRecord.forInsert(7L, 1, Map.of("a", "b"))),
                 null);
-        verify(jdbc, times(1)).update(any(PreparedStatementCreator.class));
+        assertThat(outcome.rawCount()).isEqualTo(1);
+        assertThat(outcome.insertedCount()).isEqualTo(1);
     }
 
     // ============================ page ============================

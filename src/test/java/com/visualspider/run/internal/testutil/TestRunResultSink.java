@@ -1,5 +1,6 @@
 package com.visualspider.run.internal.testutil;
 
+import com.visualspider.result.spi.BatchOutcome;
 import com.visualspider.result.spi.ResultRecord;
 import com.visualspider.result.spi.RunEventInput;
 import com.visualspider.result.spi.RunResultSink;
@@ -8,7 +9,7 @@ import java.util.List;
 
 /**
  * 假 {@link RunResultSink}：记录所有 appendBatch 调用的 (runId, results, events)
- * 三元组（M3-3 #25）。
+ * 三元组（M3-3 #25 / M4-4 #34）。
  *
  * <p>默认行为：直接 accept；测试无 sink 副作用要求时不需要额外配置。
  */
@@ -51,9 +52,11 @@ public class TestRunResultSink implements RunResultSink {
     }
 
     @Override
-    public void appendBatch(long runId, List<ResultRecord> results, List<RunEventInput> events) {
+    public BatchOutcome appendBatch(long runId, List<ResultRecord> results, List<RunEventInput> events) {
+        int raw = results == null ? 0 : results.size();
         calls.add(new AppendCall(runId,
                 results == null ? List.of() : List.copyOf(results),
                 events == null ? List.of() : List.copyOf(events)));
+        return new BatchOutcome(raw, 0, raw, 0);
     }
 }

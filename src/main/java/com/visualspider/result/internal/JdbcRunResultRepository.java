@@ -4,6 +4,7 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.visualspider.identity.domain.ActorId;
 import com.visualspider.identity.spi.IdentityAccess;
+import com.visualspider.result.spi.BatchOutcome;
 import com.visualspider.result.spi.Page;
 import com.visualspider.result.spi.ResultRecord;
 import com.visualspider.result.spi.RunAccessDeniedException;
@@ -15,14 +16,15 @@ import com.visualspider.result.spi.RunResultQuery;
 import com.visualspider.result.spi.RunResultSink;
 import com.visualspider.result.spi.RunStats;
 import java.sql.PreparedStatement;
-import java.sql.Timestamp;
 import java.sql.SQLException;
+import java.sql.Timestamp;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import org.postgresql.util.PGobject;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.dao.EmptyResultDataAccessException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
@@ -61,7 +63,7 @@ public class JdbcRunResultRepository implements RunResultSink, RunResultQuery, R
     // ============================ 写入 ============================
 
     @Override
-    public void appendBatch(long runId, List<ResultRecord> results, List<RunEventInput> events) {
+    public BatchOutcome appendBatch(long runId, List<ResultRecord> results, List<RunEventInput> events) {
         // 写入前确认 run 存在；sink 调用方为运行引擎，已在 RunCoordinator 校验权限
         Integer exists = jdbc.query(
                 "SELECT 1 FROM collection_run WHERE id = ?",
@@ -70,36 +72,107 @@ public class JdbcRunResultRepository implements RunResultSink, RunResultQuery, R
         if (exists == null) {
             throw new RunAccessDeniedException(runId);
         }
+        int raw = results == null ? 0 : results.size();
+        int dedup = 0;
+        int inserted = 0;
+        int failed = 0;
         if (results != null && !results.isEmpty()) {
-            jdbc.update(con -> {
-                PreparedStatement ps = con.prepareStatement(
-                        "INSERT INTO run_result (run_id, sequence_no, data) VALUES (?, ?, ?::jsonb)");
-                for (ResultRecord r : results) {
-                    ps.setLong(1, runId);
-                    ps.setInt(2, r.sequenceNo());
-                    ps.setObject(3, toJsonb(r.data()));
-                    ps.addBatch();
+            for (ResultRecord r : results) {
+                try {
+                    boolean ok = insertResult(runId, r);
+                    if (ok) {
+                        inserted++;
+                    } else {
+                        dedup++;
+                    }
+                } catch (DataIntegrityViolationException dup) {
+                    // 并发兜底：另一线程同时插入了同 hash
+                    dedup++;
+                } catch (RuntimeException ex) {
+                    failed++;
+                    LOG.warn("appendBatch 行级失败 runId={} seq={}: {}",
+                            runId, r.sequenceNo(), safeMessage(ex));
                 }
-                return ps;
-            });
+            }
         }
         if (events != null && !events.isEmpty()) {
+            try {
+                jdbc.update(con -> {
+                    PreparedStatement ps = con.prepareStatement(
+                            "INSERT INTO run_event (run_id, level, stage, url, error_code, message) "
+                                    + "VALUES (?, ?, ?, ?, ?, ?)");
+                    for (RunEventInput e : events) {
+                        ps.setLong(1, runId);
+                        ps.setString(2, e.level().name());
+                        ps.setString(3, e.stage());
+                        ps.setString(4, e.url());
+                        ps.setString(5, e.errorCode());
+                        ps.setString(6, e.message());
+                        ps.addBatch();
+                    }
+                    return ps;
+                });
+            } catch (RuntimeException ex) {
+                LOG.warn("appendBatch events failed runId={}: {}", runId, safeMessage(ex));
+            }
+        }
+        // 累加 collection_run 计数（spec §D6）
+        jdbc.update(
+                "UPDATE collection_run "
+                        + "SET record_count_raw = record_count_raw + ?, "
+                        + "    record_count_dedup = record_count_dedup + ?, "
+                        + "    record_count_final = record_count_final + ?, "
+                        + "    fail_count = fail_count + ? "
+                        + "WHERE id = ?",
+                raw, dedup, inserted, failed, runId);
+        return new BatchOutcome(raw, dedup, inserted, failed);
+    }
+
+    /**
+     * 单条 INSERT；hash 为 null 直接插入；非 null 先查后插（避免覆盖同 hash 已有行）。
+     *
+     * @return true 新行写入；false hash 重复被跳过
+     */
+    private boolean insertResult(long runId, ResultRecord r) {
+        byte[] hash = r.uniqueKeyHash();
+        if (hash == null) {
+            // 走无 hash 路径
+            jdbc.update(
+                    "INSERT INTO run_result (run_id, sequence_no, data) VALUES (?, ?, ?::jsonb)",
+                    runId, r.sequenceNo(), toJsonb(r.data()));
+            return true;
+        }
+        Integer exists = jdbc.query(
+                "SELECT 1 FROM run_result WHERE run_id = ? AND unique_key_hash = ? LIMIT 1",
+                rs -> rs.next() ? 1 : null,
+                runId, hash);
+        if (exists != null) {
+            return false;  // dedup
+        }
+        try {
             jdbc.update(con -> {
                 PreparedStatement ps = con.prepareStatement(
-                        "INSERT INTO run_event (run_id, level, stage, url, error_code, message) "
-                                + "VALUES (?, ?, ?, ?, ?, ?)");
-                for (RunEventInput e : events) {
-                    ps.setLong(1, runId);
-                    ps.setString(2, e.level().name());
-                    ps.setString(3, e.stage());
-                    ps.setString(4, e.url());
-                    ps.setString(5, e.errorCode());
-                    ps.setString(6, e.message());
-                    ps.addBatch();
-                }
+                        "INSERT INTO run_result (run_id, sequence_no, unique_key_hash, data) "
+                                + "VALUES (?, ?, ?, ?::jsonb)");
+                ps.setLong(1, runId);
+                ps.setInt(2, r.sequenceNo());
+                ps.setBytes(3, hash);
+                ps.setObject(4, toJsonb(r.data()));
                 return ps;
             });
+            return true;
+        } catch (DataIntegrityViolationException dup) {
+            return false;  // 并发兜底：另一线程刚插同样 hash
         }
+    }
+
+    private static final org.slf4j.Logger LOG =
+            org.slf4j.LoggerFactory.getLogger(JdbcRunResultRepository.class);
+
+    private static String safeMessage(Throwable t) {
+        if (t == null) return "";
+        String m = t.getMessage();
+        return m == null ? t.getClass().getSimpleName() : m;
     }
 
     // ============================ 查询 ============================

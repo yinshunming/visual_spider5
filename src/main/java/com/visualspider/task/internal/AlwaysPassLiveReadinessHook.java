@@ -2,17 +2,13 @@ package com.visualspider.task.internal;
 
 import com.visualspider.task.domain.TaskDefinition;
 import com.visualspider.task.spi.LiveReadinessHook;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.stereotype.Component;
 
 /**
- * 测试 / 无 Playwright 环境占位 {@link LiveReadinessHook}：永远返回 ok。
- *
- * <p>{@code @ConditionalOnMissingBean(LiveReadinessHook.class)} 让真实 lane
- * 实现（visualbrowser 装配）自动覆盖本占位。
+ * 默认 {@link LiveReadinessHook}：永远返回 ok；M4-6 (#36) Playwright lane
+ * 接入真实实现时通过 {@code @Primary} 覆盖本默认。
  */
 @Component
-@ConditionalOnMissingBean(LiveReadinessHook.class)
 public class AlwaysPassLiveReadinessHook implements LiveReadinessHook {
 
     @Override
