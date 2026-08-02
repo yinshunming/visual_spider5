@@ -15,6 +15,13 @@ seed:
 # 默认跳过 *IT；pg-it profile 显式启用
 skipITs: true
 
+# M3-2 (#24) 启动恢复 + 派发器在无 DB 的测试环境关闭，避免阻塞 context 加载
+run:
+  recovery:
+    enabled: false
+  dispatcher:
+    enabled: false
+
 spring:
   flyway:
     enabled: false

@@ -43,6 +43,12 @@ public enum BusinessErrorCode {
     SESSION_NOT_OWNER(403, "SESSION_NOT_OWNER", "无权访问该配置会话"),
     CONFIG_LANE_FULL(409, "CONFIG_LANE_FULL", "配置会话 lane 已占满，请稍候重试"),
     TASK_NOT_DRAFT(409, "TASK_NOT_DRAFT", "仅草稿或可运行状态的任务可开启配置会话"),
+    // M3 运行（spec §D19）
+    RUN_NOT_FOUND(404, "RUN_NOT_FOUND", "运行不存在"),
+    RUN_NOT_OWNER(403, "RUN_NOT_OWNER", "无权访问该运行"),
+    USER_RUN_LIMIT(409, "USER_RUN_LIMIT", "每用户最多 1 个进行中的运行"),
+    TASK_NOT_READY(409, "TASK_NOT_READY", "任务未通过校验，不能启动运行"),
+    RUN_NOT_CANCELLABLE(409, "RUN_NOT_CANCELLABLE", "运行已结束，不能取消"),
     // 500 - 内部
     INTERNAL_ERROR(500, "INTERNAL_ERROR", "服务器内部错误");
 

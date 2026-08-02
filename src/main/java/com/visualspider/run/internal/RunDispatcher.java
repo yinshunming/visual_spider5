@@ -1,0 +1,237 @@
+package com.visualspider.run.internal;
+
+import com.visualspider.run.spi.RunExecutor;
+import com.visualspider.run.spi.RunExecutionContext;
+import com.visualspider.visualbrowser.spi.LanePool;
+import com.visualspider.visualbrowser.spi.Lease;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.context.event.ContextRefreshedEvent;
+import org.springframework.context.event.EventListener;
+import org.springframework.stereotype.Component;
+import jakarta.annotation.PreDestroy;
+
+/**
+ * 单 JVM 派发器（ADR-0006）。
+ *
+ * <p>事件驱动：{@code RunCoordinator.start} 创建 WAITING run 后 + lane 释放后各触发一次派发；
+ * 5s 兜底轮询防丢事件。PG 即队列：{@code SELECT ... WHERE status='WAITING' ORDER BY created_at LIMIT 1}
+ * + {@code UPDATE ... SET status='RUNNING', started_at=now() WHERE id=? AND status='WAITING'}
+ * （CAS affected=1 才提交到 lane）。
+ *
+ * <p><b>关键约束（ADR-0006）</b>：禁止使用 {@link java.util.concurrent.BlockingQueue} 或
+ * {@link java.util.concurrent.Semaphore} 作为队列副本（WAITING 队列 = PG）；本类仅在
+ * JVM 侧维护派发信号（{@link #scheduleDispatch()} + 兜底轮询）+ 执行器 + lane 池。
+ *
+ * <p>由 {@code LanePoolConfig} 装配 {@code RunLanePool}（3 lane），
+ * {@code RunCoordinator.start} 注入本派发器并调用 {@link #scheduleDispatch()} 触发派发。
+ *
+ * <p>执行器（{@link RunExecutor}）在 lane 线程运行：执行完归还 lease，lease 关闭时再触发一次
+ * 派发（{@link Lease#close()} → {@link #onLaneReleased(String)}）。
+ */
+@Component
+public class RunDispatcher {
+
+    private static final Logger LOG = LoggerFactory.getLogger(RunDispatcher.class);
+
+    private final LanePool lanePool;
+    private final RunRepository repository;
+    private final RunExecutor executor;
+    private final long fallbackIntervalSeconds;
+    private final long maxDurationMs;
+    private final int maxPages;
+    private final int maxRecords;
+
+    private volatile boolean started;
+    private ScheduledExecutorService scheduler;
+
+    public RunDispatcher(
+            @org.springframework.beans.factory.annotation.Qualifier("runLanePool") LanePool runLanePool,
+            RunRepository repository,
+            RunExecutor executor,
+            @Value("${run.lane-pool.fallback-seconds:5}") long fallbackSeconds,
+            @Value("${run.limits.max-duration-minutes:30}") long maxDurationMinutes,
+            @Value("${run.limits.max-pages:200}") int maxPages,
+            @Value("${run.limits.max-records:10000}") int maxRecords) {
+        this.lanePool = runLanePool;
+        this.repository = repository;
+        this.executor = executor;
+        this.fallbackIntervalSeconds = fallbackSeconds > 0 ? fallbackSeconds : 5;
+        this.maxDurationMs = maxDurationMinutes > 0
+                ? TimeUnit.MINUTES.toMillis(maxDurationMinutes)
+                : TimeUnit.MINUTES.toMillis(30);
+        this.maxPages = maxPages > 0 ? maxPages : 200;
+        this.maxRecords = maxRecords > 0 ? maxRecords : 10000;
+    }
+
+    /** Spring 上下文就绪后启动兜底轮询；run 接收新 run 前必须就绪（{@code @Order} 控制）。 */
+    @EventListener(ContextRefreshedEvent.class)
+    public void onContextRefreshed() {
+        if (started) {
+            return;
+        }
+        started = true;
+        scheduler = Executors.newSingleThreadScheduledExecutor(r -> {
+            Thread t = new Thread(r, "run-dispatcher-fallback");
+            t.setDaemon(true);
+            return t;
+        });
+        scheduler.scheduleWithFixedDelay(this::safeDispatch,
+                fallbackIntervalSeconds, fallbackIntervalSeconds, TimeUnit.SECONDS);
+        LOG.info("run dispatcher started: fallback={}s", fallbackIntervalSeconds);
+    }
+
+    @PreDestroy
+    public void shutdown() {
+        if (scheduler != null) {
+            scheduler.shutdownNow();
+        }
+    }
+
+    /**
+     * 触发一次派发尝试。
+     *
+     * <p>事件源：{@code RunCoordinator.start}（WAITING 创建后）+ lane 释放后
+     * （{@link LeaseNotifier} 触发）。
+     *
+     * <p>非阻塞：直接尝试一次 CAS + 提交；如果 lane 池满则 silent break，下次兜底轮询再来。
+     */
+    public void scheduleDispatch() {
+        if (!started) {
+            return;
+        }
+        // 同线程 inline 调用；不会与兜底轮询并发（最多重复 claim 一次，CAS affected=0 兜底）。
+        safeDispatch();
+    }
+
+    private void safeDispatch() {
+        try {
+            dispatchOnce();
+        } catch (RuntimeException ex) {
+            LOG.warn("dispatch failed", ex);
+        }
+    }
+
+    /** 一次派发循环：取 WAITING → CAS → 提交到 lane。 */
+    void dispatchOnce() {
+        while (lanePool.borrowedCount() < lanePool.capacity()) {
+            var claimed = repository.claimOldestWaiting();
+            if (claimed.isEmpty()) {
+                return;
+            }
+            RunRepository.RunRecord rec = claimed.get();
+            // claimed 一定是 RUNNING + started_at 已设（CAS 成功）；单 JVM 下不会发生 claimed=空但 affected=0
+            try {
+                leaseAndSubmit(rec);
+            } catch (RuntimeException ex) {
+                LOG.warn("dispatch submit failed runId={}; will retry via fallback", rec.runId(), ex);
+                return;
+            }
+        }
+    }
+
+    private void leaseAndSubmit(RunRepository.RunRecord rec) {
+        Lease lease;
+        try {
+            lease = lanePool.acquire("run-" + rec.runId());
+        } catch (RuntimeException ex) {
+            // pool full → 中断；兜底轮询下次再来
+            throw ex;
+        }
+        RunExecutionContext context = new RunExecutionContext(
+                System.currentTimeMillis(),
+                maxDurationMs,
+                maxPages,
+                maxRecords);
+        // lane 释放回调：触发下一次派发
+        LeaseNotifier notifier = new LeaseNotifier(this);
+        NotifyingLease notifying = new NotifyingLease(lease, notifier, "run-" + rec.runId());
+        // 提交到 lane 固定线程
+        try {
+            // 不持有 Playwright / Page；当前 M3-2 stub 不真正异步，使用同步 submitFuture 风格。
+            // RunLanePool 内每个 BrowserLane 都有固定线程（生产路径）；这里走同步执行 + lease close。
+            executor.execute(context, rec.runId());
+        } catch (RuntimeException ex) {
+            LOG.error("run execution failed runId={}", rec.runId(), ex);
+            try {
+                repository.markTerminal(rec.runId(),
+                        com.visualspider.run.spi.RunState.FAILED,
+                        com.visualspider.run.spi.StopReason.PAGE_RETRY_EXHAUSTED);
+            } catch (RuntimeException ignored) {
+                // 状态写回失败 → 下次启动恢复扫描兜底
+            }
+        } finally {
+            notifying.close();
+        }
+    }
+
+    /** Lease 释放回调（事件驱动派发的第二个事件源）。 */
+    void onLaneReleased(String runKey) {
+        scheduleDispatch();
+    }
+
+    /**
+     * 暴露给测试：手动触发一次派发循环（同步等待）。
+     */
+    public void dispatchOnceForTest() {
+        dispatchOnce();
+    }
+
+    /** 包装 {@link Lease}：close 时通知派发器触发新一轮派发。 */
+    private static final class NotifyingLease implements Lease {
+        private final Lease delegate;
+        private final LeaseNotifier notifier;
+        private final String runKey;
+        private volatile boolean closed;
+
+        NotifyingLease(Lease delegate, LeaseNotifier notifier, String runKey) {
+            this.delegate = delegate;
+            this.notifier = notifier;
+            this.runKey = runKey;
+        }
+
+        @Override
+        public String laneName() {
+            return delegate.laneName();
+        }
+
+        @Override
+        public boolean isOpen() {
+            return !closed && delegate.isOpen();
+        }
+
+        @Override
+        public void close() {
+            if (closed) {
+                return;
+            }
+            closed = true;
+            try {
+                delegate.close();
+            } finally {
+                notifier.onReleased(runKey);
+            }
+        }
+    }
+
+    /** 回调持有派发器；用于 {@link NotifyingLease} 关闭时通知。 */
+    private static final class LeaseNotifier {
+        private final RunDispatcher dispatcher;
+
+        LeaseNotifier(RunDispatcher dispatcher) {
+            this.dispatcher = dispatcher;
+        }
+
+        void onReleased(String runKey) {
+            try {
+                dispatcher.onLaneReleased(runKey);
+            } catch (RuntimeException ex) {
+                LOG.warn("lane-released notify failed runKey={}", runKey, ex);
+            }
+        }
+    }
+}

@@ -46,7 +46,10 @@ public final class DefaultVisualSessionManager implements VisualSessionManager {
     }
 
     @org.springframework.beans.factory.annotation.Autowired
-    public DefaultVisualSessionManager(LanePool lanePool, Clock clock, LegacySessionFactory legacyFactory) {
+    public DefaultVisualSessionManager(
+            @org.springframework.beans.factory.annotation.Qualifier("configLanePool") LanePool lanePool,
+            Clock clock,
+            LegacySessionFactory legacyFactory) {
         if (lanePool == null) {
             throw new IllegalArgumentException("lanePool 不能为空");
         }

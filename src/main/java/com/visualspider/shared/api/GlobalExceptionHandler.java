@@ -6,6 +6,11 @@ import com.visualspider.identity.domain.exceptions.NotAuthenticatedException;
 import com.visualspider.identity.domain.exceptions.UserNotFoundException;
 import com.visualspider.identity.domain.exceptions.WeakPasswordException;
 import com.visualspider.result.spi.RunAccessDeniedException;
+import com.visualspider.run.internal.RunNotCancellableException;
+import com.visualspider.run.internal.RunNotFoundException;
+import com.visualspider.run.internal.RunNotOwnerException;
+import com.visualspider.run.internal.TaskNotReadyException;
+import com.visualspider.run.internal.UserRunLimitException;
 import com.visualspider.task.domain.exceptions.StaleTaskVersionException;
 import com.visualspider.task.domain.exceptions.TaskInvalidDefinitionException;
 import com.visualspider.task.domain.exceptions.TaskNotFoundException;
@@ -177,11 +182,46 @@ public class GlobalExceptionHandler {
                 .body(ApiError.of(BusinessErrorCode.CONFIG_LANE_FULL));
     }
 
-    @ExceptionHandler(RunAccessDeniedException.class)
+@ExceptionHandler(RunAccessDeniedException.class)
     public ResponseEntity<ApiError> handleRunAccessDenied(RunAccessDeniedException ex) {
         // 非 owner 且非 admin 访问 run 结果 -> RESOURCE_NOT_FOUND（不回显存在性，spec §D12）
         return ResponseEntity.status(HttpStatus.NOT_FOUND)
                 .body(ApiError.of(BusinessErrorCode.RESOURCE_NOT_FOUND, "运行不存在"));
+    }
+
+    // ---------- M3 运行异常（spec §D19）----------
+
+    @ExceptionHandler(RunNotFoundException.class)
+    public ResponseEntity<ApiError> handleRunNotFound(RunNotFoundException ex) {
+        return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                .body(ApiError.of(BusinessErrorCode.RUN_NOT_FOUND, ex.getMessage()));
+    }
+
+    @ExceptionHandler(RunNotOwnerException.class)
+    public ResponseEntity<ApiError> handleRunNotOwner(RunNotOwnerException ex) {
+        return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                .body(ApiError.of(BusinessErrorCode.RUN_NOT_OWNER, ex.getMessage()));
+    }
+
+    @ExceptionHandler(UserRunLimitException.class)
+    public ResponseEntity<ApiError> handleUserRunLimit(UserRunLimitException ex) {
+        LOG.info("user run limit: {}", ex.getMessage());
+        return ResponseEntity.status(HttpStatus.CONFLICT)
+                .body(ApiError.of(BusinessErrorCode.USER_RUN_LIMIT));
+    }
+
+    @ExceptionHandler(TaskNotReadyException.class)
+    public ResponseEntity<ApiError> handleTaskNotReady(TaskNotReadyException ex) {
+        LOG.info("task not ready: {}", ex.getMessage());
+        return ResponseEntity.status(HttpStatus.CONFLICT)
+                .body(ApiError.of(BusinessErrorCode.TASK_NOT_READY, ex.getMessage()));
+    }
+
+    @ExceptionHandler(RunNotCancellableException.class)
+    public ResponseEntity<ApiError> handleRunNotCancellable(RunNotCancellableException ex) {
+        LOG.info("run not cancellable: {}", ex.getMessage());
+        return ResponseEntity.status(HttpStatus.CONFLICT)
+                .body(ApiError.of(BusinessErrorCode.RUN_NOT_CANCELLABLE, ex.getMessage()));
     }
 
     @ExceptionHandler(IllegalArgumentException.class)

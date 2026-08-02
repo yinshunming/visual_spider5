@@ -80,4 +80,24 @@ class BusinessErrorCodeTest {
                 .isEqualTo("TASK_INVALID_WAIT_POLICY");
         assertThat(BusinessErrorCode.TASK_INVALID_WAIT_POLICY.userMessage()).isNotBlank();
     }
+
+    @Test
+    @DisplayName("M3 运行错误码：RUN_NOT_FOUND / RUN_NOT_OWNER / USER_RUN_LIMIT / TASK_NOT_READY / RUN_NOT_CANCELLABLE")
+    void m3RunErrorCodes() {
+        assertThat(BusinessErrorCode.RUN_NOT_FOUND.httpStatus()).isEqualTo(404);
+        assertThat(BusinessErrorCode.RUN_NOT_FOUND.code()).isEqualTo("RUN_NOT_FOUND");
+
+        assertThat(BusinessErrorCode.RUN_NOT_OWNER.httpStatus()).isEqualTo(403);
+        assertThat(BusinessErrorCode.RUN_NOT_OWNER.code()).isEqualTo("RUN_NOT_OWNER");
+
+        assertThat(BusinessErrorCode.USER_RUN_LIMIT.httpStatus()).isEqualTo(409);
+        assertThat(BusinessErrorCode.USER_RUN_LIMIT.code()).isEqualTo("USER_RUN_LIMIT");
+        assertThat(BusinessErrorCode.USER_RUN_LIMIT.userMessage()).isNotBlank();
+
+        assertThat(BusinessErrorCode.TASK_NOT_READY.httpStatus()).isEqualTo(409);
+        assertThat(BusinessErrorCode.TASK_NOT_READY.code()).isEqualTo("TASK_NOT_READY");
+
+        assertThat(BusinessErrorCode.RUN_NOT_CANCELLABLE.httpStatus()).isEqualTo(409);
+        assertThat(BusinessErrorCode.RUN_NOT_CANCELLABLE.code()).isEqualTo("RUN_NOT_CANCELLABLE");
+    }
 }

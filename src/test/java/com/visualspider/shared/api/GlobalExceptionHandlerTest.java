@@ -145,4 +145,50 @@ class GlobalExceptionHandlerTest {
         // 不暴露 ex.getMessage()
         assertThat(res.getBody().message()).doesNotContain("secret detail");
     }
+
+    @Test
+    @DisplayName("RunNotFoundException → 404 + RUN_NOT_FOUND")
+    void runNotFound() {
+        ResponseEntity<ApiError> res = handler.handleRunNotFound(
+                new com.visualspider.run.internal.RunNotFoundException(7L));
+        assertThat(res.getStatusCode().value()).isEqualTo(404);
+        assertThat(res.getBody().code()).isEqualTo("RUN_NOT_FOUND");
+    }
+
+    @Test
+    @DisplayName("RunNotOwnerException → 403 + RUN_NOT_OWNER")
+    void runNotOwner() {
+        ResponseEntity<ApiError> res = handler.handleRunNotOwner(
+                new com.visualspider.run.internal.RunNotOwnerException(7L));
+        assertThat(res.getStatusCode().value()).isEqualTo(403);
+        assertThat(res.getBody().code()).isEqualTo("RUN_NOT_OWNER");
+    }
+
+    @Test
+    @DisplayName("UserRunLimitException → 409 + USER_RUN_LIMIT")
+    void userRunLimit() {
+        ResponseEntity<ApiError> res = handler.handleUserRunLimit(
+                new com.visualspider.run.internal.UserRunLimitException(7L));
+        assertThat(res.getStatusCode().value()).isEqualTo(409);
+        assertThat(res.getBody().code()).isEqualTo("USER_RUN_LIMIT");
+    }
+
+    @Test
+    @DisplayName("TaskNotReadyException → 409 + TASK_NOT_READY")
+    void taskNotReady() {
+        ResponseEntity<ApiError> res = handler.handleTaskNotReady(
+                new com.visualspider.run.internal.TaskNotReadyException(7L, "校验未通过"));
+        assertThat(res.getStatusCode().value()).isEqualTo(409);
+        assertThat(res.getBody().code()).isEqualTo("TASK_NOT_READY");
+    }
+
+    @Test
+    @DisplayName("RunNotCancellableException → 409 + RUN_NOT_CANCELLABLE")
+    void runNotCancellable() {
+        ResponseEntity<ApiError> res = handler.handleRunNotCancellable(
+                new com.visualspider.run.internal.RunNotCancellableException(
+                        7L, com.visualspider.run.spi.RunState.SUCCESS));
+        assertThat(res.getStatusCode().value()).isEqualTo(409);
+        assertThat(res.getBody().code()).isEqualTo("RUN_NOT_CANCELLABLE");
+    }
 }
