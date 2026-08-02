@@ -4,12 +4,14 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.Mockito.clearInvocations;
 import static org.mockito.Mockito.when;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.visualspider.identity.domain.ActorId;
 import com.visualspider.identity.spi.IdentityAccess;
+import com.visualspider.result.internal.JdbcRunResultRepository;
 import com.visualspider.result.spi.RunAccessDeniedException;
 import com.visualspider.result.spi.RunExport;
 import java.io.ByteArrayOutputStream;
@@ -24,6 +26,7 @@ import org.postgresql.util.PGobject;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
+import org.springframework.boot.test.mock.mockito.SpyBean;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
 
@@ -47,6 +50,14 @@ class RunExportIT {
 
     @MockBean
     private IdentityAccess identityAccess;
+
+    /**
+     * 间谍真实仓储：导出路径上 {@code CsvResultWriter} / {@code JsonResultWriter} 通过
+     * 包级 {@code nextBatch(...)} 拉批；spy 让我们能数 JDBC SELECT 次数，断言
+     * "10k 行 ≈ 10 批 + 1 哨兵 = 11 次"（spec §T5 / 退出标准：不全量加载）。
+     */
+    @SpyBean
+    private JdbcRunResultRepository repositorySpy;
 
     private long aliceUserId;
     private long adminUserId;
@@ -102,13 +113,14 @@ class RunExportIT {
     }
 
     @Test
-    @DisplayName("CSV: 10k 行流式输出；行数=10000 + 表头；首末行匹配")
+    @DisplayName("CSV: 10k 行流式输出；行数=10000 + 表头；首末行匹配；nextBatch 约 10-11 次")
     void csvTenThousandRows() throws Exception {
         when(identityAccess.canAccessTask(anyLong(), any())).thenAnswer(inv -> {
             long ownerId = inv.getArgument(0);
             ActorId actor = inv.getArgument(1);
             return actor.value() == ownerId;
         });
+        clearInvocations(repositorySpy);
 
         ByteArrayOutputStream out = new ByteArrayOutputStream();
         runExport.writeCsv(aliceRunId, new ActorId(aliceUserId), out);
@@ -119,16 +131,23 @@ class RunExportIT {
         assertThat(lines[0]).isEqualTo("title,url,score");
         assertThat(lines[1]).isEqualTo("row-0,https://x/0,0");
         assertThat(lines[TOTAL]).isEqualTo("row-" + (TOTAL - 1) + ",https://x/" + (TOTAL - 1) + "," + (TOTAL - 1));
+
+        // spec §T5: spy JDBC 次数 ~10 (10k / 1000 = 10 个非空批 + 1 哨兵 = 11 次)
+        int nextBatchCalls = countNextBatchInvocations();
+        assertThat(nextBatchCalls)
+                .as("CSV 10k 行应触发 ~10 批拉取，10k/1000=10 批 + 1 哨兵")
+                .isBetween(10, 11);
     }
 
     @Test
-    @DisplayName("JSON: 10k 行流式输出；顶层数组 10000 元素；首末元素匹配")
+    @DisplayName("JSON: 10k 行流式输出；顶层数组 10000 元素；首末元素匹配；nextBatch 约 10-11 次")
     void jsonTenThousandRows() throws Exception {
         when(identityAccess.canAccessTask(anyLong(), any())).thenAnswer(inv -> {
             long ownerId = inv.getArgument(0);
             ActorId actor = inv.getArgument(1);
             return actor.value() == ownerId;
         });
+        clearInvocations(repositorySpy);
 
         ByteArrayOutputStream out = new ByteArrayOutputStream();
         runExport.writeJson(aliceRunId, new ActorId(aliceUserId), out);
@@ -139,6 +158,22 @@ class RunExportIT {
         assertThat(root.size()).isEqualTo(TOTAL);
         assertThat(root.get(0).get("title").asText()).isEqualTo("row-0");
         assertThat(root.get(TOTAL - 1).get("title").asText()).isEqualTo("row-" + (TOTAL - 1));
+
+        // spec §T5: spy JDBC 次数 ~10
+        int nextBatchCalls = countNextBatchInvocations();
+        assertThat(nextBatchCalls)
+                .as("JSON 10k 行应触发 ~10 批拉取，10k/1000=10 批 + 1 哨兵")
+                .isBetween(10, 11);
+    }
+
+    /**
+     * 数 spy 上 {@code nextBatch} 的真实调用次数（{@code Mockito.mockingDetails} 跨 verify
+     * 失败也能可靠读取）。
+     */
+    private int countNextBatchInvocations() {
+        return (int) org.mockito.Mockito.mockingDetails(repositorySpy).getInvocations().stream()
+                .filter(inv -> "nextBatch".equals(inv.getMethod().getName()))
+                .count();
     }
 
     @Test
