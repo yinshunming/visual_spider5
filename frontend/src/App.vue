@@ -1,4 +1,13 @@
 <script setup lang="ts">
+/**
+ * App.vue：M3-6 #28 加入 Vue Router 后的全局壳。
+ *
+ * - 顶部 banner（HTTP 明文警告，复用 M1-4 既有 copy）；
+ * - 顶头：版本 + 当前用户 + 登出（M1-4 沿用）+ 顶部导航（任务 / 运行）；
+ * - <router-view> 渲染当前路由视图。
+ *
+ * 保持原有 fetchMe/handleLogout、原有 banner 与全局 CSS，仅追加 router-view 和导航栏。
+ */
 import { ref, onMounted } from 'vue'
 import { http, ApiError } from './http'
 
@@ -47,29 +56,20 @@ onMounted(fetchMe)
     </div>
     <header class="header">
       <h1>Visual Spider 5</h1>
-      <span class="version">v{{ APP_VERSION }} · M1 ready</span>
+      <span class="version">v{{ APP_VERSION }} · M3 ready</span>
+      <nav class="nav">
+        <router-link to="/runs">运行</router-link>
+        <router-link to="/tasks">任务</router-link>
+      </nav>
+      <div class="me">
+        <span v-if="meStatus === 'authenticated'">已登录：<strong>{{ meUsername }}</strong></span>
+        <span v-else-if="meStatus === 'anonymous'">未登录</span>
+        <span v-else>查询中…</span>
+        <button v-if="meStatus === 'authenticated'" @click="handleLogout">登出</button>
+      </div>
     </header>
-    <main class="main">
-      <section class="card">
-        <h2>身份</h2>
-        <div v-if="meStatus === 'authenticated'">
-          已登录：<strong>{{ meUsername }}</strong>
-          <button @click="handleLogout">登出</button>
-        </div>
-        <div v-else-if="meStatus === 'anonymous'">未登录</div>
-        <div v-else>查询中…</div>
-        <div v-if="meError" class="error">错误：{{ meError }}</div>
-      </section>
-      <section class="card">
-        <h2>登录</h2>
-        <p>M1-4 阶段不实现登录表单 UI；通过 <code>POST /api/auth/login</code> 调用后端登录端点。
-          产品 UI 在后续 milestone 落地。</p>
-      </section>
-      <section class="card">
-        <h2>任务（M1-4 暂未落地）</h2>
-        <p>任务 CRUD 与预览功能在后续 milestone 启用。</p>
-      </section>
-    </main>
+    <div v-if="meError" class="error">错误：{{ meError }}</div>
+    <router-view />
   </div>
 </template>
 
@@ -83,6 +83,7 @@ onMounted(fetchMe)
   --color-warning-bg: #fff8e1;
   --color-warning-border: #f59e0b;
   --color-error: #b91c1c;
+  --color-border: #e5e7eb;
   --space-section: 1.5rem;
   --radius-card: 8px;
   --shadow-card: 0 1px 3px rgba(0, 0, 0, 0.06), 0 1px 2px rgba(0, 0, 0, 0.04);
@@ -94,7 +95,7 @@ body {
   background: var(--color-bg);
   color: var(--color-text);
 }
-.app { max-width: 720px; margin: 0 auto; padding: 2rem 1.5rem; }
+.app { max-width: 1280px; margin: 0 auto; padding: 1.5rem 1.5rem 2rem; }
 .banner {
   background: var(--color-warning-bg);
   border-left: 4px solid var(--color-warning-border);
@@ -104,30 +105,35 @@ body {
   font-size: 0.9rem;
 }
 .header {
-  display: flex; align-items: baseline; gap: 0.75rem;
+  display: flex; align-items: center; gap: 0.75rem;
   margin-bottom: 1.5rem;
+  flex-wrap: wrap;
 }
-.header h1 { margin: 0; font-size: 1.6rem; }
-.version { color: var(--color-muted); font-size: 0.9rem; }
-.main { display: flex; flex-direction: column; gap: var(--space-section); }
-.card {
-  background: var(--color-surface);
-  border-radius: var(--radius-card);
-  padding: 1.25rem;
-  box-shadow: var(--shadow-card);
+.header h1 { margin: 0; font-size: 1.5rem; }
+.version { color: var(--color-muted); font-size: 0.9rem; margin-right: auto; }
+.nav { display: flex; gap: 0.75rem; }
+.nav a {
+  text-decoration: none;
+  color: var(--color-text);
+  padding: 0.25rem 0.5rem;
+  border-radius: 4px;
+  font-size: 0.95rem;
 }
-.card h2 { margin: 0 0 0.5rem 0; font-size: 1.1rem; }
-.card p { margin: 0.25rem 0; color: var(--color-muted); font-size: 0.9rem; }
-.card button {
+.nav a.router-link-active {
+  background: var(--color-accent);
+  color: #fff;
+}
+.me { display: flex; gap: 0.5rem; align-items: center; font-size: 0.9rem; }
+.me button {
   background: var(--color-accent);
   color: white;
   border: none;
   border-radius: 4px;
-  padding: 0.45rem 1rem;
+  padding: 0.35rem 0.8rem;
   cursor: pointer;
-  font-size: 0.9rem;
+  font-size: 0.85rem;
 }
-.card button:hover { filter: brightness(0.95); }
+.me button:hover { filter: brightness(0.95); }
 .error { color: var(--color-error); margin-top: 0.5rem; font-size: 0.85rem; }
 code { background: #f1f3f5; padding: 0.1em 0.4em; border-radius: 3px; font-size: 0.85em; }
 </style>
