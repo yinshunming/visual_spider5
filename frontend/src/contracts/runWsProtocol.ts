@@ -31,6 +31,8 @@ export interface ProgressFrame extends BaseFrame {
   recordCountRaw: number
   recordCountFinal: number
   failCount: number
+  /** M4 spec §D11：list 模式下批次写入后推送命中数；SINGLE_PAGE 路径为 undefined。 */
+  listItemMatchCount?: number
   /** 已累计耗时；启动前为 0。 */
   elapsedMs: number
 }

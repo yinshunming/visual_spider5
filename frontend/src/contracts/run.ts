@@ -49,6 +49,8 @@ export interface RunSummary {
   stopReason: StopReason | null
   cancelRequested: boolean
   pageCount: number
+  recordCountRaw: number
+  recordCountDedup: number
   recordCountFinal: number
   failCount: number
   createdAt: string

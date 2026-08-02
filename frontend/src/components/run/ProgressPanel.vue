@@ -59,12 +59,20 @@ const recordRaw = computed<number>(() => {
   return props.progress?.recordCountRaw ?? props.fallbackDetail?.recordCountRaw ?? 0
 })
 
+const recordDedup = computed<number>(() => {
+  return props.fallbackDetail?.recordCountDedup ?? 0
+})
+
 const recordFinal = computed<number>(() => {
   return props.progress?.recordCountFinal ?? props.fallbackDetail?.recordCountFinal ?? 0
 })
 
 const failCount = computed<number>(() => {
   return props.progress?.failCount ?? props.fallbackDetail?.failCount ?? 0
+})
+
+const listItemMatchCount = computed<number | null>(() => {
+  return props.progress?.listItemMatchCount ?? null
 })
 
 const elapsedMs = computed<number>(() => props.progress?.elapsedMs ?? 0)
@@ -115,12 +123,16 @@ const isTerminal = computed<boolean>(() => {
         <dd class="progress__url">{{ currentUrl ?? '—' }}</dd>
       </div>
       <div>
-        <dt>页 / 记录（final）/ 失败</dt>
+        <dt>页 / 最终 / 失败</dt>
         <dd>{{ pageCount }} / {{ recordFinal }} / {{ failCount }}</dd>
       </div>
       <div>
-        <dt>原始记录</dt>
-        <dd>{{ recordRaw }}</dd>
+        <dt>原始 / 去重</dt>
+        <dd>{{ recordRaw }} / {{ recordDedup }}</dd>
+      </div>
+      <div v-if="listItemMatchCount !== null">
+        <dt>本次批次命中</dt>
+        <dd>{{ listItemMatchCount }}</dd>
       </div>
       <div>
         <dt>耗时</dt>

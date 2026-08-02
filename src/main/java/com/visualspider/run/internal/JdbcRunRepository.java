@@ -255,6 +255,7 @@ public class JdbcRunRepository implements RunRepository {
                 rs.getInt("record_count_final"),
                 rs.getInt("record_count_final"),
                 rs.getInt("fail_count"),
+                null,  // listItemMatchCount：M4 list 模式通道单独填充；DB 派生 row mapper 不知 mode
                 0L);
     }
 
