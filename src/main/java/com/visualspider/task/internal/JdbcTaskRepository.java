@@ -31,7 +31,7 @@ import org.springframework.stereotype.Repository;
 @Repository
 public class JdbcTaskRepository implements TaskRepository {
 
-    private static final int CURRENT_SCHEMA_VERSION = 1;
+    private static final int CURRENT_SCHEMA_VERSION = 2;
 
     private final JdbcTemplate jdbc;
     private final ObjectMapper objectMapper;

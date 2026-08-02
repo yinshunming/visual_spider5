@@ -136,7 +136,7 @@ class TaskReadinessImplM2Test {
     }
 
     private static TaskDefinition definition(String startUrl, List<FieldDefinition> fields) {
-        return new TaskDefinition(1, new SinglePage(), startUrl, Viewport.DEFAULT, null, fields);
+        return new TaskDefinition(2, new SinglePage(), startUrl, Viewport.DEFAULT, null, fields);
     }
 
     private static FieldDefinition field(String name, String selector, String attribute,

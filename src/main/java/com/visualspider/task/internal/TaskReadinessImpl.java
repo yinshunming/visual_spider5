@@ -4,11 +4,14 @@ import com.visualspider.identity.domain.ActorId;
 import com.visualspider.shared.api.BusinessErrorCode;
 import com.visualspider.task.domain.FieldDefinition;
 import com.visualspider.task.domain.FieldSource;
+import com.visualspider.task.domain.Limits;
 import com.visualspider.task.domain.ReadinessReport;
 import com.visualspider.task.domain.ReadinessReport.ReadinessError;
 import com.visualspider.task.domain.SelectorType;
 import com.visualspider.task.domain.TaskDefinition;
 import com.visualspider.task.domain.TaskDraft;
+import com.visualspider.task.domain.TaskMode;
+import com.visualspider.task.domain.UniqueKeyField;
 import com.visualspider.task.domain.Viewport;
 import com.visualspider.task.domain.WaitPolicy;
 import com.visualspider.task.spi.TaskCatalog;
@@ -26,20 +29,25 @@ import javax.xml.xpath.XPathFactory;
 import org.springframework.stereotype.Service;
 
 /**
- * {@link TaskReadiness} 默认实现（M2-4 #20 / ADR-0005）。
+ * {@link TaskReadiness} 默认实现（M2-4 #20 / M3-1 #23 / M4-1 #31 / ADR-0005）。
  *
  * <p>{@link #validate} 完整校验：
- * schemaVersion、http(s) URL 语法、viewport 1280×720、至少 1 字段、字段名大小写不敏感唯一、
- * selector 语法（CSS via Jsoup QueryParser 与 XOR 兼容 / XPath via JDK XPathFactory）、ATTRIBUTE
- * 字段 attributeName 非空、PAGE_URL 字段 selector/attributeName 必空。
+ * schemaVersion（= 2；M4 spec §D10）、http(s) URL 语法、viewport 1280×720、
+ * 至少 1 字段、字段名大小写不敏感唯一、selector 语法（CSS via Jsoup QueryParser /
+ * XPath via JDK XPathFactory）、ATTRIBUTE 字段 attributeName 非空、PAGE_URL 字段
+ * selector/attributeName 必空、{@code mode=LIST} 时 {@code listItemRule} 必填、
+ * {@code uniqueKey[i].fieldName} 必须在 fields[].name 中。
  *
  * <p>{@link #validateForRun(long, ActorId)} 调用同样的语法校验；ATTRIBUTE / 正则 / 类型转换
  * 等运行时检查由 {@code extraction} 模块承担，不参与 READY 判定（spec D5）。
+ *
+ * <p>M4 list-item 实匹配校验（{@code LIST_ITEM_RULE_NO_MATCH} / {@code MULTIPLE_MATCH}
+ * 阻止就绪）由 M4-3 (#33) 在 {@code extraction.previewList} 路径里挂入，本类不实现。
  */
 @Service
 public class TaskReadinessImpl implements TaskReadiness {
 
-    private static final int EXPECTED_SCHEMA_VERSION = 1;
+    private static final int EXPECTED_SCHEMA_VERSION = 2;
     private final XPath xpathCompiler = XPathFactory.newInstance().newXPath();
     /** @Lazy 打破 TaskCatalog -> TaskReadiness -> TaskCatalog 构造期循环（ADR-0005）。 */
     private final TaskCatalog taskCatalog;
@@ -61,15 +69,100 @@ public class TaskReadinessImpl implements TaskReadiness {
             return ReadinessReport.failure(List.of(error(BusinessErrorCode.TASK_INVALID_DEFINITION,
                     BusinessErrorCode.TASK_INVALID_DEFINITION.userMessage(), null)));
         }
-        if (draft.schemaVersion() != EXPECTED_SCHEMA_VERSION) {
-            errors.add(error(BusinessErrorCode.TASK_UNSUPPORTED_SCHEMA,
-                    BusinessErrorCode.TASK_UNSUPPORTED_SCHEMA.userMessage(), "schemaVersion"));
-        }
+        validateSchemaVersion(draft, errors);
         validateUrl(draft.startUrl(), errors);
         validateViewport(draft.viewport(), errors);
         validateWaitPolicy(draft.waitPolicy(), errors);
+        validateLimits(draft.limits(), errors);
+        validateListItemRule(draft, errors);
+        validateUniqueKey(draft, errors);
         validateFields(draft.fields(), errors);
         return errors.isEmpty() ? ReadinessReport.success() : ReadinessReport.failure(errors);
+    }
+
+    /**
+     * M4 schemaVersion 校验（spec §D10）：
+     * <ul>
+     *   <li>{@code schemaVersion == 2} → OK</li>
+     *   <li>{@code schemaVersion == 1} → {@code TASK_SCHEMA_OUTDATED}（启动 hook 应已升 V2；未升级则拒绝）</li>
+     *   <li>其它 → {@code TASK_UNSUPPORTED_SCHEMA}</li>
+     * </ul>
+     */
+    private void validateSchemaVersion(TaskDefinition draft, List<ReadinessError> errors) {
+        int v = draft.schemaVersion();
+        if (v == EXPECTED_SCHEMA_VERSION) {
+            return;
+        }
+        if (v == 1) {
+            errors.add(error(BusinessErrorCode.TASK_SCHEMA_OUTDATED,
+                    "schemaVersion=1 已过时，请重新保存任务以升级到 V2", "schemaVersion"));
+            return;
+        }
+        errors.add(error(BusinessErrorCode.TASK_UNSUPPORTED_SCHEMA,
+                "不支持的 schemaVersion=" + v + "（期望 " + EXPECTED_SCHEMA_VERSION + "）",
+                "schemaVersion"));
+    }
+
+    /**
+     * Limits 校验（spec §D1）：{@link Limits} 紧凑构造器已硬上限拒绝越界，
+     * 此处防御性兜底，覆盖反序列化路径绕过构造器的极端场景。
+     */
+    private void validateLimits(Limits limits, List<ReadinessError> errors) {
+        if (limits == null) {
+            errors.add(error(BusinessErrorCode.LIMITS_OUT_OF_RANGE,
+                    "limits 不能为空", "limits"));
+            return;
+        }
+        try {
+            // 重新走构造器；越界抛 IllegalArgumentException
+            new Limits(limits.pageLimit(), limits.recordLimit(), limits.durationLimit());
+        } catch (IllegalArgumentException ex) {
+            errors.add(error(BusinessErrorCode.LIMITS_OUT_OF_RANGE,
+                    ex.getMessage(), "limits"));
+        }
+    }
+
+    /**
+     * list 模式必填 listItemRule；其它模式可不填（spec §D10）。
+     */
+    private void validateListItemRule(TaskDefinition draft, List<ReadinessError> errors) {
+        if (!(draft.mode() instanceof TaskMode.List)) {
+            return;
+        }
+        if (draft.listItemRule() == null || draft.listItemRule().selector() == null
+                || draft.listItemRule().selector().isBlank()) {
+            errors.add(error(BusinessErrorCode.LIST_ITEM_RULE_MISSING,
+                    "列表模式任务必须定义列表项规则", "listItemRule"));
+        }
+    }
+
+    /**
+     * uniqueKey[i].fieldName 必须在 fields[].name 中（spec §D10）。
+     */
+    private void validateUniqueKey(TaskDefinition draft, List<ReadinessError> errors) {
+        List<UniqueKeyField> keys = draft.uniqueKey();
+        if (keys == null || keys.isEmpty()) {
+            return;
+        }
+        Set<String> fieldNames = new HashSet<>();
+        for (FieldDefinition f : draft.fields()) {
+            if (f != null && f.name() != null) {
+                fieldNames.add(f.name());
+            }
+        }
+        for (int i = 0; i < keys.size(); i++) {
+            UniqueKeyField k = keys.get(i);
+            String path = "uniqueKey[" + i + "].fieldName";
+            if (k == null || k.fieldName() == null || k.fieldName().isBlank()) {
+                errors.add(error(BusinessErrorCode.UNIQUE_KEY_UNKNOWN_FIELD,
+                        "唯一键字段名不能为空", path));
+                continue;
+            }
+            if (!fieldNames.contains(k.fieldName())) {
+                errors.add(error(BusinessErrorCode.UNIQUE_KEY_UNKNOWN_FIELD,
+                        "唯一键字段名未在字段列表中: " + k.fieldName(), path));
+            }
+        }
     }
 
     @Override

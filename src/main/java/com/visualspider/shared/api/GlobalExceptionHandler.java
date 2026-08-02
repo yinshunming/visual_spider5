@@ -101,6 +101,12 @@ public class GlobalExceptionHandler {
             case "TASK_UNSUPPORTED_SCHEMA" -> BusinessErrorCode.TASK_UNSUPPORTED_SCHEMA;
             case "TASK_INVALID_MODE" -> BusinessErrorCode.TASK_INVALID_MODE;
             case "TASK_INVALID_WAIT_POLICY" -> BusinessErrorCode.TASK_INVALID_WAIT_POLICY;
+            case "TASK_SCHEMA_OUTDATED" -> BusinessErrorCode.TASK_SCHEMA_OUTDATED;
+            case "LIST_ITEM_RULE_MISSING" -> BusinessErrorCode.LIST_ITEM_RULE_MISSING;
+            case "LIST_ITEM_RULE_NO_MATCH" -> BusinessErrorCode.LIST_ITEM_RULE_NO_MATCH;
+            case "MULTIPLE_MATCH" -> BusinessErrorCode.MULTIPLE_MATCH;
+            case "UNIQUE_KEY_UNKNOWN_FIELD" -> BusinessErrorCode.UNIQUE_KEY_UNKNOWN_FIELD;
+            case "LIMITS_OUT_OF_RANGE" -> BusinessErrorCode.LIMITS_OUT_OF_RANGE;
             default -> BusinessErrorCode.TASK_INVALID_DEFINITION;
         };
         return ResponseEntity.status(HttpStatus.BAD_REQUEST)
