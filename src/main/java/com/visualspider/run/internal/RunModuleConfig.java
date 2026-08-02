@@ -72,6 +72,20 @@ public class RunModuleConfig {
         return new SinglePageRunExecutor(repository, resultSink, extraction, urlPolicy);
     }
 
+    @Bean
+    public com.visualspider.result.internal.UniqueKeyHasher uniqueKeyHasher() {
+        return new com.visualspider.result.internal.UniqueKeyHasher();
+    }
+
+    @Bean
+    public ListRunExecutor listRunExecutor(RunRepository repository,
+                                           com.visualspider.result.spi.RunResultSink resultSink,
+                                           com.visualspider.extraction.spi.ExtractionPreview extraction,
+                                           com.visualspider.visualbrowser.spi.TargetUrlPolicy urlPolicy,
+                                           com.visualspider.result.internal.UniqueKeyHasher hasher) {
+        return new ListRunExecutor(repository, resultSink, extraction, urlPolicy, hasher);
+    }
+
     @Bean(initMethod = "onContextRefreshed", destroyMethod = "shutdown")
     @org.springframework.boot.autoconfigure.condition.ConditionalOnProperty(
             name = "run.dispatcher.enabled", havingValue = "true", matchIfMissing = true)
