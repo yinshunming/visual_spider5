@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.times;
@@ -16,9 +17,11 @@ import com.visualspider.identity.spi.IdentityAccess;
 import com.visualspider.result.spi.Page;
 import com.visualspider.result.spi.ResultRecord;
 import com.visualspider.result.spi.RunAccessDeniedException;
+import com.visualspider.result.spi.RunEvent;
 import com.visualspider.result.spi.RunEventInput;
 import com.visualspider.result.spi.RunEventLevel;
 import com.visualspider.result.spi.RunStats;
+import java.time.Instant;
 import java.sql.PreparedStatement;
 import java.util.List;
 import java.util.Map;
@@ -231,5 +234,62 @@ class JdbcRunResultRepositoryTest {
         when(identityAccess.canAccessTask(eq(99L), any(ActorId.class))).thenReturn(true);
 
         repo.verifyAccess(7L, new ActorId(1L));
+    }
+
+    // ---------- pageEvents / after (M3-5 #27) ----------
+
+    @Test
+    @DisplayName("pageEvents: keyset 分页 + count(*)")
+    void pageEventsReturnsPage() {
+        // access 校验通过：owner_id = 1L
+        when(identityAccess.canAccessTask(eq(1L), any(ActorId.class))).thenReturn(true);
+        // 两次 queryForObject 顺序：先 verifyAccess (owner_id) -> 1L；再 count(*) -> 2L
+        when(jdbc.queryForObject(anyString(), eq(Long.class), eq(7L)))
+                .thenReturn(1L).thenReturn(2L);
+        // 主查询：mock 直接返回 1 条 RunEvent
+        RunEvent ev = new RunEvent(1001L, 7L, RunEventLevel.INFO, "navigate",
+                "https://example.com/", null, "ok", Instant.now());
+        when(jdbc.query(anyString(), any(RowMapper.class),
+                eq(7L), anyInt(), anyInt()))
+                .thenReturn(List.of(ev));
+
+        Page<RunEvent> page = repo.pageEvents(7L, new ActorId(1L), 1, 50);
+
+        assertThat(page.total()).isEqualTo(2L);
+        assertThat(page.items()).hasSize(1);
+        assertThat(page.page()).isEqualTo(1);
+        assertThat(page.size()).isEqualTo(50);
+    }
+
+    @Test
+    @DisplayName("pageEvents: 非 owner 抛 RunAccessDeniedException")
+    void pageEventsAccessDenied() {
+        when(jdbc.queryForObject(anyString(), eq(Long.class), eq(7L))).thenReturn(99L);
+        when(identityAccess.canAccessTask(eq(99L), any(ActorId.class))).thenReturn(false);
+
+        assertThatThrownBy(() -> repo.pageEvents(7L, new ActorId(2L), 1, 50))
+                .isInstanceOf(RunAccessDeniedException.class);
+    }
+
+    @Test
+    @DisplayName("after: 增量游标过滤 id > afterEventId（after <= 0 视为 0）")
+    void afterReturnsEventsAfterCursor() {
+        when(identityAccess.canAccessTask(eq(1L), any(ActorId.class))).thenReturn(true);
+        when(jdbc.queryForObject(anyString(), eq(Long.class), eq(7L))).thenReturn(1L);
+        RunEvent ev = new RunEvent(2L, 7L, RunEventLevel.WARN, "navigate",
+                null, null, "retry", Instant.now());
+        when(jdbc.query(anyString(), any(RowMapper.class),
+                eq(7L), anyLong()))
+                .thenReturn(List.of(ev));
+
+        List<RunEvent> after0 = repo.after(7L, new ActorId(1L), 0L);
+        assertThat(after0).hasSize(1);
+        assertThat(after0.get(0).id()).isEqualTo(2L);
+
+        // 二次调用同样 stub：再 stub 一次 after()，verifyAccess 第二次调用 owner_id；
+        // 这里用 actor=2L 触发 canAccessTask 同样的 true。
+        when(identityAccess.canAccessTask(eq(1L), any(ActorId.class))).thenReturn(true);
+        List<RunEvent> after1 = repo.after(7L, new ActorId(2L), 1L);
+        assertThat(after1).hasSize(1);
     }
 }

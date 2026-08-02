@@ -7,7 +7,10 @@ import com.visualspider.identity.spi.IdentityAccess;
 import com.visualspider.result.spi.Page;
 import com.visualspider.result.spi.ResultRecord;
 import com.visualspider.result.spi.RunAccessDeniedException;
+import com.visualspider.result.spi.RunEvent;
 import com.visualspider.result.spi.RunEventInput;
+import com.visualspider.result.spi.RunEventLevel;
+import com.visualspider.result.spi.RunEventQuery;
 import com.visualspider.result.spi.RunResultQuery;
 import com.visualspider.result.spi.RunResultSink;
 import com.visualspider.result.spi.RunStats;
@@ -41,7 +44,7 @@ import org.springframework.stereotype.Repository;
  * {@link JsonResultWriter} 间接调用。
  */
 @Repository
-public class JdbcRunResultRepository implements RunResultSink, RunResultQuery {
+public class JdbcRunResultRepository implements RunResultSink, RunResultQuery, RunEventQuery {
 
     private final JdbcTemplate jdbc;
     private final ObjectMapper objectMapper;
@@ -217,6 +220,49 @@ public class JdbcRunResultRepository implements RunResultSink, RunResultQuery {
                         + "WHERE run_id = ? AND sequence_no > ? "
                         + "ORDER BY sequence_no ASC LIMIT ?",
                 resultRowMapper(), runId, afterSeq, limit);
+    }
+
+    // ============================ 事件查询（M3-5 #27）============================
+
+    @Override
+    public Page<RunEvent> pageEvents(long runId, ActorId actor, int page, int size) {
+        verifyAccess(runId, actor);
+        int p = page <= 0 ? 1 : page;
+        int s = size <= 0 ? 1 : Math.min(size, MAX_PAGE_SIZE);
+        int offset = (p - 1) * s;
+        Long total = jdbc.queryForObject(
+                "SELECT count(*) FROM run_event WHERE run_id = ?",
+                Long.class, runId);
+        List<RunEvent> items = jdbc.query(
+                "SELECT id, run_id, level, stage, url, error_code, message, created_at "
+                        + "FROM run_event WHERE run_id = ? "
+                        + "ORDER BY id ASC LIMIT ? OFFSET ?",
+                eventRowMapper(), runId, s, offset);
+        return new Page<>(items, p, s, total == null ? 0L : total);
+    }
+
+    @Override
+    public List<RunEvent> after(long runId, ActorId actor, long afterEventId) {
+        verifyAccess(runId, actor);
+        long startId = afterEventId <= 0 ? 0L : afterEventId;
+        return jdbc.query(
+                "SELECT id, run_id, level, stage, url, error_code, message, created_at "
+                        + "FROM run_event WHERE run_id = ? AND id > ? "
+                        + "ORDER BY id ASC LIMIT 1000",
+                eventRowMapper(), runId, startId);
+    }
+
+    private RowMapper<RunEvent> eventRowMapper() {
+        return (rs, rowNum) -> new RunEvent(
+                rs.getLong("id"),
+                rs.getLong("run_id"),
+                RunEventLevel.valueOf(rs.getString("level")),
+                rs.getString("stage"),
+                rs.getString("url"),
+                rs.getString("error_code"),
+                rs.getString("message"),
+                rs.getTimestamp("created_at") == null ? null
+                        : rs.getTimestamp("created_at").toInstant());
     }
 
     // ============================ RowMappers (instance) ============================
