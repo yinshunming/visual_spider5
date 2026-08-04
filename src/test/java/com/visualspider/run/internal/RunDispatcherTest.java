@@ -177,6 +177,22 @@ class RunDispatcherTest {
         }
     }
 
+    @Test
+    @DisplayName("dispatcher 按 task.mode 路由：LIST -> list executor，SINGLE_PAGE -> single executor")
+    void routesByMode() {
+        RecordingExecutor single = new RecordingExecutor();
+        RecordingExecutor list = new RecordingExecutor();
+        RunDispatcher routingDispatcher = new RunDispatcher(lanePool, repository, single, list, pageHandleProvider);
+
+        repository.enqueueWaiting(701L, 1L, new TaskMode.List());
+        repository.enqueueWaiting(702L, 1L, new TaskMode.SinglePage());
+
+        routingDispatcher.dispatchOnceForTest();
+
+        assertThat(list.submittedRunIds).containsExactly(701L);
+        assertThat(single.submittedRunIds).containsExactly(702L);
+    }
+
     // ---------- fakes ----------
 
     /** fake LanePool：borrowedCount 受 acquire/release 控制；不抛满（与 RunLanePool 一致）。 */
@@ -255,9 +271,13 @@ class RunDispatcherTest {
         private final java.util.Map<Long, TerminalMark> terminalMarks = new java.util.HashMap<>();
 
         RunRecord enqueueWaiting(long runId, long ownerId) {
-            TaskDefinition def = new TaskDefinition(1, new TaskMode.SinglePage(),
+            return enqueueWaiting(runId, ownerId, new TaskMode.SinglePage());
+        }
+
+        RunRecord enqueueWaiting(long runId, long ownerId, TaskMode mode) {
+            TaskDefinition def = new TaskDefinition(1, mode,
                     "https://example.com", Viewport.DEFAULT, null, List.of());
-            TaskSnapshot snap = new TaskSnapshot(1L, ownerId, "demo", new TaskMode.SinglePage(),
+            TaskSnapshot snap = new TaskSnapshot(1L, ownerId, "demo", mode,
                     1, 1L, def);
             RunRecord r = new RunRecord(runId, 1L, ownerId, RunState.WAITING, null,
                     false, 0, 0, 0, snap,

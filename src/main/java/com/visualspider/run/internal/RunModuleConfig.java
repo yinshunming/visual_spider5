@@ -27,7 +27,8 @@ import org.springframework.core.annotation.Order;
  *   <li>{@code runCoordinator}：start / cancel / get / list / progress</li>
  *   <li>{@code runPageHandleProvider}：lease → per-run RunPageHandle 工厂</li>
  *   <li>{@code runDispatcher}：事件驱动 + 5s 兜底 + CAS 翻 WAITING → RUNNING</li>
- *   <li>{@code runExecutor}：{@code SinglePageRunExecutor}（M3-3 替换 M3-2 stub）</li>
+ *   <li>{@code singlePageRunExecutor} + {@code listRunExecutor}：两支 {@code RunExecutor}，
+ *       dispatcher 按 {@code task.mode} 路由（spec §D15；M4 re-baseline）</li>
  * </ul>
  *
  * <p>队列约定（ADR-0006）：{@code collection_run.status='WAITING'} 即队列；不在 JVM
@@ -65,7 +66,8 @@ public class RunModuleConfig {
     }
 
     @Bean
-    public RunExecutor runExecutor(RunRepository repository,
+    @org.springframework.beans.factory.annotation.Qualifier("singlePageRunExecutor")
+    public RunExecutor singlePageRunExecutor(RunRepository repository,
                                    com.visualspider.result.spi.RunResultSink resultSink,
                                    com.visualspider.extraction.spi.ExtractionPreview extraction,
                                    com.visualspider.visualbrowser.spi.TargetUrlPolicy urlPolicy) {
@@ -78,7 +80,8 @@ public class RunModuleConfig {
     }
 
     @Bean
-    public ListRunExecutor listRunExecutor(RunRepository repository,
+    @org.springframework.beans.factory.annotation.Qualifier("listRunExecutor")
+    public RunExecutor listRunExecutor(RunRepository repository,
                                            com.visualspider.result.spi.RunResultSink resultSink,
                                            com.visualspider.extraction.spi.ExtractionPreview extraction,
                                            com.visualspider.visualbrowser.spi.TargetUrlPolicy urlPolicy,
@@ -91,9 +94,12 @@ public class RunModuleConfig {
             name = "run.dispatcher.enabled", havingValue = "true", matchIfMissing = true)
     public RunDispatcher runDispatcher(LanePool runLanePool,
                                        RunRepository repository,
-                                       RunExecutor executor,
+                                       @org.springframework.beans.factory.annotation.Qualifier("singlePageRunExecutor")
+                                               RunExecutor singlePageExecutor,
+                                       @org.springframework.beans.factory.annotation.Qualifier("listRunExecutor")
+                                               RunExecutor listExecutor,
                                        RunPageHandleProvider pageHandleProvider) {
-        return new RunDispatcher(runLanePool, repository, executor, pageHandleProvider);
+        return new RunDispatcher(runLanePool, repository, singlePageExecutor, listExecutor, pageHandleProvider);
     }
 
     /**

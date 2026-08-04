@@ -2,7 +2,7 @@ package com.visualspider.run.internal;
 
 import com.visualspider.extraction.spi.ExtractionPreview;
 import com.visualspider.extraction.spi.ExtractionPreview.DomState;
-import com.visualspider.extraction.spi.ExtractionPreview.ListPreviewResult;
+import com.visualspider.extraction.spi.ExtractionPreview.Node;
 import com.visualspider.extraction.spi.PreviewResult;
 import com.visualspider.result.internal.UniqueKeyHasher;
 import com.visualspider.result.spi.BatchOutcome;
@@ -11,6 +11,7 @@ import com.visualspider.result.spi.RunEventInput;
 import com.visualspider.result.spi.RunEventLevel;
 import com.visualspider.result.spi.RunResultSink;
 import com.visualspider.run.spi.RunExecutionContext;
+import com.visualspider.run.spi.RunExecutor;
 import com.visualspider.run.spi.RunPageHandle;
 import com.visualspider.run.spi.RunState;
 import com.visualspider.run.spi.StopReason;
@@ -34,7 +35,7 @@ import org.slf4j.LoggerFactory;
  *
  * <p>终态（spec §D7）：{@code final>0 && fail>0} → PARTIAL_SUCCESS；其它见下。
  */
-public class ListRunExecutor {
+public class ListRunExecutor implements RunExecutor {
 
     private static final Logger LOG = LoggerFactory.getLogger(ListRunExecutor.class);
 
@@ -56,7 +57,17 @@ public class ListRunExecutor {
         this.hasher = hasher;
     }
 
-    public void execute(RunExecutionContext context, long runId, TaskSnapshot snapshot) {
+    @Override
+    public void execute(RunExecutionContext context, long runId) {
+        // 2 参 RunExecutor SPI（spec §D8）：内部自取 snapshot，镜像 SinglePageRunExecutor。
+        RunRepository.RunRecord rec = repository.findById(runId).orElse(null);
+        if (rec == null) {
+            LOG.error("ListRunExecutor: run not found runId={}", runId);
+            tryEmitTerminal(runId, RunState.FAILED, StopReason.BROWSER_START_FAILED,
+                    "run not found");
+            return;
+        }
+        TaskSnapshot snapshot = rec.snapshot();
         TaskDefinition def = snapshot.definition();
         if (!(def.mode() instanceof TaskMode.List)) {
             throw new IllegalArgumentException(
@@ -109,15 +120,33 @@ public class ListRunExecutor {
             page.extraWaitSeconds(def.waitPolicy().extraWaitSeconds());
         }
         DomState dom = page.acquireDomState();
-        ListPreviewResult listResult = preview.previewList(def, dom, 1024);
+        // 正式运行：uncapped iteration（spec §D8）；previewList 的 20 cap 仅用于 preview UI（§D9）。
+        // 直接 dom.query(listItemRule) + per-item scopeToNode + preview，避免 previewList 隐式截断。
+        SelectorType itemType = def.listItemRule().selectorType() == null
+                ? SelectorType.CSS : def.listItemRule().selectorType();
+        List<Node> items;
+        try {
+            items = dom.query(def.listItemRule().selector(), itemType);
+        } catch (RuntimeException ex) {
+            tryEmitTerminal(runId, RunState.FAILED, StopReason.ENTRY_FAILED,
+                    "listItemRule query failed: " + safeMessage(ex));
+            return;
+        }
         tryEmitEvent(runId, RunEventLevel.INFO, "list-iter-start", page.currentUrl(), null,
-                "items=" + listResult.totalMatchCount());
+                "items=" + items.size());
         int sequenceNo = 1;
-        for (PreviewResult pr : listResult.previews()) {
+        for (Node item : items) {
             if (context.isCancelRequested() || context.recordLimitExceeded()
                     || context.pageLimitExceeded() || context.timeLimitExceeded(System.currentTimeMillis())) {
                 break;
             }
+            DomState scoped;
+            try {
+                scoped = dom.scopeToNode(item);
+            } catch (UnsupportedOperationException noScope) {
+                scoped = dom;
+            }
+            PreviewResult pr = preview.preview(def, scoped);
             context.incrementPageCount();
             BatchOutcome outcome = writeOneRecord(runId, pr, def, sequenceNo++,
                     page.currentUrl());
@@ -183,15 +212,24 @@ public class ListRunExecutor {
 
         tryEmitTerminal(runId, state, reason,
                 "final=" + finalCount + " fail=" + failCount);
-        repository.markTerminal(runId, state, reason);
+        // tryEmitTerminal 已写终态（镜像 SinglePageRunExecutor），此处不再重复 markTerminal。
     }
 
     private void tryEmitTerminal(long runId, RunState state, StopReason reason, String msg) {
+        // 先发 terminal 事件，再写终态；保持与"结果写 -> 事件写 -> 终态写"顺序。
+        // 镜像 SinglePageRunExecutor.tryEmitTerminal：早退路径（run-not-found / page-null /
+        // unexpected）若只发事件不写终态，run 会永久卡在 RUNNING，下次启动恢复扫描兜底。
+        String safeMsg = msg == null ? "" : msg;
         try {
             resultSink.appendBatch(runId, List.of(), List.of(
                     new RunEventInput(RunEventLevel.INFO, "terminal", null,
                             state.name() + "/" + (reason == null ? "null" : reason.name()),
-                            msg == null ? "" : msg)));
+                            safeMsg)));
+        } catch (RuntimeException ignored) {
+            // ignore
+        }
+        try {
+            repository.markTerminal(runId, state, reason);
         } catch (RuntimeException ignored) {
             // ignore
         }

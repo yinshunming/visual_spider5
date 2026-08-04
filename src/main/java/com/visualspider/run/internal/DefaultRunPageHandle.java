@@ -114,6 +114,12 @@ public final class DefaultRunPageHandle implements RunPageHandle {
     public DomState acquireDomState() {
         final String currentUrl = currentUrl();
         return new DomState() {
+            // 保留最近一次 query 的 selector/type/nodes，供 scopeToNode 按 identity 定位 index。
+            // previewList 调用模式：query(listItemRule) 一次 -> 对每个 node scopeToNode -> scoped.query(field)。
+            private String lastSelector;
+            private SelectorType lastType;
+            private List<ExtractionPreview.Node> lastNodes = List.of();
+
             @Override
             public String url() {
                 return currentUrl;
@@ -121,11 +127,52 @@ public final class DefaultRunPageHandle implements RunPageHandle {
 
             @Override
             public List<ExtractionPreview.Node> query(String selector, SelectorType type) {
+                List<ExtractionPreview.Node> nodes;
                 try {
-                    return lane.submit(() -> runQueryJs(selector, type)).join();
+                    nodes = lane.submit(() -> runQueryJs(selector, type)).join();
                 } catch (RuntimeException ex) {
                     throw new RuntimeException("DOM query failed: " + safeMsg(ex), ex);
                 }
+                lastSelector = selector;
+                lastType = type;
+                lastNodes = nodes == null ? List.of() : nodes;
+                return lastNodes;
+            }
+
+            @Override
+            public DomState scopeToNode(ExtractionPreview.Node item) {
+                if (item == null || lastSelector == null) {
+                    throw new UnsupportedOperationException("scopeToNode: 无可定位的父查询");
+                }
+                int index = -1;
+                for (int i = 0; i < lastNodes.size(); i++) {
+                    if (lastNodes.get(i) == item) {  // identity：previewList 回传同一 Node 实例
+                        index = i;
+                        break;
+                    }
+                }
+                if (index < 0) {
+                    throw new UnsupportedOperationException("scopeToNode: node 不在最近一次 query 结果中");
+                }
+                final String parentSelector = lastSelector;
+                final SelectorType parentType = lastType == null ? SelectorType.CSS : lastType;
+                final int itemIndex = index;
+                return new DomState() {
+                    @Override
+                    public String url() {
+                        return currentUrl;
+                    }
+
+                    @Override
+                    public List<ExtractionPreview.Node> query(String selector, SelectorType type) {
+                        try {
+                            return lane.submit(() -> runScopedQueryJs(
+                                    parentSelector, parentType, itemIndex, selector, type)).join();
+                        } catch (RuntimeException ex) {
+                            throw new RuntimeException("DOM scoped query failed: " + safeMsg(ex), ex);
+                        }
+                    }
+                };
             }
         };
     }
@@ -165,6 +212,74 @@ public final class DefaultRunPageHandle implements RunPageHandle {
             }
             return List.of();
         }
+        return toNodes(result);
+    }
+
+    /**
+     * 在第 {@code itemIndex} 个 listItemRule 命中元素子树内查询字段选择器（spec §D9 list-item 作用域）。
+     *
+     * <p>先按 {@code (parentSelector, parentType)} 重新定位父元素集合取第 {@code itemIndex} 个，
+     * 再在其子树内按 {@code (fieldSelector, fieldType)} 查询。CSS 走 {@code element.querySelectorAll}，
+     * XPath 走 {@code document.evaluate(sel, element, ...)}。
+     */
+    @SuppressWarnings("unchecked")
+    private List<ExtractionPreview.Node> runScopedQueryJs(
+            String parentSelector, SelectorType parentType, int itemIndex,
+            String fieldSelector, SelectorType fieldType) {
+        String js = "(args) => {"
+                + "  const pSel = args.pSel, pType = args.pType, idx = args.idx;"
+                + "  const fSel = args.fSel, fType = args.fType;"
+                + "  let parents = [];"
+                + "  try {"
+                + "    if (pType === 'xpath') {"
+                + "      const xr = document.evaluate(pSel, document, null, XPathResult.ORDERED_NODE_SNAPSHOT_TYPE, null);"
+                + "      for (let i = 0; i < xr.snapshotLength; i++) parents.push(xr.snapshotItem(i));"
+                + "    } else {"
+                + "      parents = Array.from(document.querySelectorAll(pSel));"
+                + "    }"
+                + "  } catch (e) { return { error: String(e) }; }"
+                + "  const parent = parents[idx];"
+                + "  if (!parent) return [];"
+                + "  let raw = [];"
+                + "  try {"
+                + "    if (fType === 'xpath') {"
+                + "      const xr2 = document.evaluate(fSel, parent, null, XPathResult.ORDERED_NODE_SNAPSHOT_TYPE, null);"
+                + "      for (let i = 0; i < xr2.snapshotLength; i++) raw.push(xr2.snapshotItem(i));"
+                + "    } else {"
+                + "      raw = Array.from(parent.querySelectorAll(fSel));"
+                + "    }"
+                + "  } catch (e) { return { error: String(e) }; }"
+                + "  return raw.filter(n => n && n.nodeType === 1).map(el => {"
+                + "    const attrs = {};"
+                + "    for (const a of el.attributes) attrs[a.name] = a.value;"
+                + "    return { tagName: el.tagName, id: el.id || '', className: el.className || '',"
+                + "      textContent: (el.textContent || '').substring(0, 500), attributes: attrs };"
+                + "  });"
+                + "}";
+        Object result;
+        try {
+            result = page.evaluate(js, Map.of(
+                    "pSel", parentSelector == null ? "" : parentSelector,
+                    "pType", parentType.name().toLowerCase(),
+                    "idx", itemIndex,
+                    "fSel", fieldSelector == null ? "" : fieldSelector,
+                    "fType", (fieldType == null ? SelectorType.CSS : fieldType).name().toLowerCase()));
+        } catch (RuntimeException ex) {
+            throw new RuntimeException("DOM scoped query failed: " + safeMsg(ex), ex);
+        }
+        if (result instanceof Map<?, ?> errMap) {
+            Object err = errMap.get("error");
+            if (err != null) {
+                throw new RuntimeException(String.valueOf(err));
+            }
+            return List.of();
+        }
+        return toNodes(result);
+    }
+
+    /** 把 page.evaluate 返回的 JS 对象数组映射为 {@link ExtractionPreview.Node} 列表（query 与 scoped 共用）。 */
+    @SuppressWarnings("unchecked")
+    private List<ExtractionPreview.Node> toNodes(Object result) {
         List<Map<String, Object>> raw = (List<Map<String, Object>>) result;
         List<ExtractionPreview.Node> nodes = new ArrayList<>(raw.size());
         for (Map<String, Object> m : raw) {

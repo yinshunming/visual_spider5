@@ -3,6 +3,7 @@ package com.visualspider.run.internal;
 import com.visualspider.run.spi.RunExecutor;
 import com.visualspider.run.spi.RunExecutionContext;
 import com.visualspider.run.spi.RunPageHandle;
+import com.visualspider.task.domain.TaskMode;
 import com.visualspider.visualbrowser.spi.LanePool;
 import com.visualspider.visualbrowser.spi.Lease;
 import java.util.concurrent.Executors;
@@ -49,7 +50,8 @@ public class RunDispatcher {
 
     private final LanePool lanePool;
     private final RunRepository repository;
-    private final RunExecutor executor;
+    private final RunExecutor singlePageExecutor;
+    private final RunExecutor listExecutor;
     private final RunPageHandleProvider pageHandleProvider;
 
     private volatile boolean started;
@@ -59,11 +61,15 @@ public class RunDispatcher {
     public RunDispatcher(
             @org.springframework.beans.factory.annotation.Qualifier("runLanePool") LanePool runLanePool,
             RunRepository repository,
-            RunExecutor executor,
+            @org.springframework.beans.factory.annotation.Qualifier("singlePageRunExecutor")
+                    RunExecutor singlePageExecutor,
+            @org.springframework.beans.factory.annotation.Qualifier("listRunExecutor")
+                    RunExecutor listExecutor,
             RunPageHandleProvider pageHandleProvider) {
         this.lanePool = runLanePool;
         this.repository = repository;
-        this.executor = executor;
+        this.singlePageExecutor = singlePageExecutor;
+        this.listExecutor = listExecutor;
         this.pageHandleProvider = pageHandleProvider == null
                 ? new RunPageHandleProvider() {
                     @Override
@@ -75,12 +81,24 @@ public class RunDispatcher {
                 : pageHandleProvider;
     }
 
-    /** 兼容 M3-2 单元测试 / 旧调用点：pageHandleProvider 走 no-op（M3-3 路径必须显式注入）。 */
+    /**
+     * 兼容 M3-2 单元测试 / 旧调用点：单 executor 路由所有 mode（M3 行为；list executor 同对象）。
+     * 生产装配走 5 参构造按 {@code task.mode} 分发（spec §D15）。
+     */
+    public RunDispatcher(
+            @org.springframework.beans.factory.annotation.Qualifier("runLanePool") LanePool runLanePool,
+            RunRepository repository,
+            RunExecutor executor,
+            RunPageHandleProvider pageHandleProvider) {
+        this(runLanePool, repository, executor, executor, pageHandleProvider);
+    }
+
+    /** 兼容 M3-2 单元测试：pageHandleProvider 走 no-op。 */
     public RunDispatcher(
             @org.springframework.beans.factory.annotation.Qualifier("runLanePool") LanePool runLanePool,
             RunRepository repository,
             RunExecutor executor) {
-        this(runLanePool, repository, executor, null);
+        this(runLanePool, repository, executor, executor, null);
     }
 
     /** Spring 上下文就绪后启动兜底轮询；run 接收新 run 前必须就绪（{@code @Order} 控制）。 */
@@ -179,10 +197,13 @@ public class RunDispatcher {
                 MAX_PAGES,
                 MAX_RECORDS,
                 pageHandle);
+        // 模式路由（spec §D15）：claim 后读 snapshot.mode 选 executor，不引入 Router。
+        RunExecutor exec = (rec.snapshot().definition().mode() instanceof TaskMode.List)
+                ? listExecutor : singlePageExecutor;
         LeaseNotifier notifier = new LeaseNotifier(this);
         NotifyingLease notifying = new NotifyingLease(lease, notifier, "run-" + rec.runId());
         try {
-            executor.execute(context, rec.runId());
+            exec.execute(context, rec.runId());
         } catch (RuntimeException ex) {
             LOG.error("run execution failed runId={}", rec.runId(), ex);
             try {

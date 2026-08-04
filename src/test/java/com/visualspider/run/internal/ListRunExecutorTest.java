@@ -1,7 +1,6 @@
 package com.visualspider.run.internal;
 
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.atLeastOnce;
@@ -11,7 +10,6 @@ import static org.mockito.Mockito.when;
 
 import com.visualspider.extraction.spi.ExtractionPreview;
 import com.visualspider.extraction.spi.ExtractionPreview.DomState;
-import com.visualspider.extraction.spi.ExtractionPreview.ListPreviewResult;
 import com.visualspider.extraction.spi.ExtractionPreview.Node;
 import com.visualspider.extraction.spi.PreviewResult;
 import com.visualspider.extraction.spi.PreviewResult.FieldOutcome;
@@ -40,6 +38,7 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -62,12 +61,16 @@ class ListRunExecutorTest {
 
     private final UniqueKeyHasher hasher = new UniqueKeyHasher();
 
+    /** 共享 listItemRule 命中元素集：commonNavigation 设置 DomState.query 读取此引用；
+     *  各 stub 方法（stubAllSuccess 等）在调用前写入对应数量的 Node。 */
+    private final AtomicReference<List<Node>> domItems = new AtomicReference<>(List.of());
+
     @Test
     @DisplayName("3 item 全部成功 → SUCCESS")
     void allItemsSuccess() {
         stubAllSuccess(3);
         stubRepositoryFinal(3, 0);
-        newExecutor().execute(newCtxWithHandle(pageHandle), 11L, listSnapshot());
+        newExecutor().execute(newCtxWithHandle(pageHandle), 11L);
         verify(repository, atLeastOnce()).markTerminal(anyLong(), any(RunState.class), any(StopReason.class));
         verify(resultSink, atLeastOnce()).appendBatch(eq(11L), any(), any());
     }
@@ -77,7 +80,7 @@ class ListRunExecutorTest {
     void partialSuccess() {
         stubMixedOutcomes(2, 1);
         stubRepositoryFinal(2, 1);
-        newExecutor().execute(newCtxWithHandle(pageHandle), 11L, listSnapshot());
+        newExecutor().execute(newCtxWithHandle(pageHandle), 11L);
         verify(repository, atLeastOnce()).markTerminal(anyLong(), any(RunState.class), any(StopReason.class));
     }
 
@@ -86,7 +89,7 @@ class ListRunExecutorTest {
     void allItemsFail() {
         stubAllFailures(3);
         stubRepositoryFinal(0, 3);
-        newExecutor().execute(newCtxWithHandle(pageHandle), 11L, listSnapshot());
+        newExecutor().execute(newCtxWithHandle(pageHandle), 11L);
         verify(repository, atLeastOnce()).markTerminal(anyLong(), any(RunState.class), any(StopReason.class));
     }
 
@@ -106,26 +109,25 @@ class ListRunExecutorTest {
 
     private void stubAllSuccess(int total) {
         commonNavigation();
-        List<PreviewResult> items = new ArrayList<>();
-        for (int i = 0; i < total; i++) items.add(singleItem("v-" + i));
-        AtomicInteger seq = new AtomicInteger();
+        List<Node> items = new ArrayList<>();
+        for (int i = 0; i < total; i++) items.add(new Node("tr", "", "v-" + i, "", java.util.Map.of()));
+        domItems.set(items);
         when(resultSink.appendBatch(anyLong(), any(), any()))
                 .thenAnswer(inv -> {
                     List<ResultRecord> recs = inv.getArgument(1);
                     int raw = recs == null ? 0 : recs.size();
-                    seq.incrementAndGet();
                     if (raw == 0) return new BatchOutcome(0, 0, 0, 0);
                     return new BatchOutcome(raw, 0, raw, 0);
                 });
-        when(preview.previewList(any(), any(), anyInt()))
-                .thenReturn(new ListPreviewResult(items, items.size(), List.of()));
+        when(preview.preview(any(), any())).thenReturn(singleItem("v"));
     }
 
     private void stubMixedOutcomes(int ok, int fail) {
         commonNavigation();
+        List<Node> items = new ArrayList<>();
+        for (int i = 0; i < ok + fail; i++) items.add(new Node("tr", "", "v-" + i, "", java.util.Map.of()));
+        domItems.set(items);
         AtomicInteger idx = new AtomicInteger(0);
-        List<PreviewResult> items = new ArrayList<>();
-        for (int i = 0; i < ok + fail; i++) items.add(singleItem("v-" + i));
         when(resultSink.appendBatch(anyLong(), any(), any()))
                 .thenAnswer(inv -> {
                     List<ResultRecord> recs = inv.getArgument(1);
@@ -136,14 +138,14 @@ class ListRunExecutorTest {
                     }
                     return new BatchOutcome(raw, 0, 0, raw);
                 });
-        when(preview.previewList(any(), any(), anyInt()))
-                .thenReturn(new ListPreviewResult(items, items.size(), List.of()));
+        when(preview.preview(any(), any())).thenReturn(singleItem("v"));
     }
 
     private void stubAllFailures(int total) {
         commonNavigation();
-        List<PreviewResult> items = new ArrayList<>();
-        for (int i = 0; i < total; i++) items.add(singleItem("v-" + i));
+        List<Node> items = new ArrayList<>();
+        for (int i = 0; i < total; i++) items.add(new Node("tr", "", "v-" + i, "", java.util.Map.of()));
+        domItems.set(items);
         when(resultSink.appendBatch(anyLong(), any(), any()))
                 .thenAnswer(inv -> {
                     List<ResultRecord> recs = inv.getArgument(1);
@@ -151,8 +153,7 @@ class ListRunExecutorTest {
                     if (raw == 0) return new BatchOutcome(0, 0, 0, 0);
                     return new BatchOutcome(raw, 0, 0, raw);
                 });
-        when(preview.previewList(any(), any(), anyInt()))
-                .thenReturn(new ListPreviewResult(items, items.size(), List.of()));
+        when(preview.preview(any(), any())).thenReturn(singleItem("v"));
     }
 
     private void commonNavigation() {
@@ -161,11 +162,14 @@ class ListRunExecutorTest {
                 .thenReturn(new RunPageHandle.NavigationResult(true, 200, false, null));
         when(pageHandle.currentUrl()).thenReturn("https://example.com/list");
         when(pageHandle.waitForSelector(any(), anyLong())).thenReturn(true);
-        when(pageHandle.acquireDomState()).thenReturn(new DomState() {
+        // 简化 DomState mock：query 一律返回 domItems 引用（listItemRule 与字段共享，
+        // 字段查询 scopeToNode 后仍走此 dom，preview() 取首项即可）。
+        DomState dom = new DomState() {
             @Override public String url() { return "https://example.com/list"; }
-            @Override public List<Node> query(String sel, SelectorType t) { return List.of(); }
+            @Override public List<Node> query(String sel, SelectorType t) { return domItems.get(); }
             @Override public DomState scopeToNode(Node item) { return this; }
-        });
+        };
+        when(pageHandle.acquireDomState()).thenReturn(dom);
     }
 
     private void stubRepositoryFinal(int finalCount, int failCount) {
