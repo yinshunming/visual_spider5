@@ -12,21 +12,32 @@ import com.visualspider.task.domain.SelectorType;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Set;
 import org.springframework.stereotype.Service;
 
 /**
  * 候选列表项推断：DOM 层级 + 启发式评分（M4 spec §D3）。
  *
- * <p>评分维度（spec §D3 加权和）：
+ * <p><b>评分对象</b>：对 clicked 的每层祖先（depth &gt;= 1，即 parent 及以上）评分。
+ * 该祖先被视为"候选<b>容器</b>"，其直接子元素中<b>同 tag+class 的多数派</b>被视为"列表项"。
+ * 最终 {@link ListItemRule#selector()} 指向<b>列表项</b>（与 {@code ListRunExecutor} /
+ * {@code ExtractionPreviewImpl} 的 {@code dom.query(listItemRule.selector())} 语义一致：
+ * 选出 N 个 item，而非 1 个容器）。
+ *
+ * <p><b>评分维度</b>（spec §D3 加权和，权重不变）：
  * <ul>
- *   <li>siblingCount 0.4：直接子元素 ≥ 2 且同类</li>
- *   <li>structureSimilarity 0.3：子结构 tag/attr jaccard ≥ 0.5</li>
- *   <li>textSimilarity 0.2：innerText 头部 token 集合 jaccard ≥ 0.4</li>
- *   <li>depthDistance 0.1：距 clicked 层级越近越好</li>
+ *   <li>siblingCount 0.4：多数派子元素数（matchCount），{@code min(count,5)/5} 饱和</li>
+ *   <li>structureSimilarity 0.3：多数派子元素两两 structureKey jaccard；
+ *       structureKey 含 {@link ElementSignature#childTagCounts()}，故"子结构一致"的容器
+ *       （如 tbody 的 5 个 tr，每个 tr 都含 3 个 td）得高分，"子结构各异"的容器
+ *       （如 tr 的 3 个 td，分别是 a/span/文本）得低分</li>
+ *   <li>textSimilarity 0.2：多数派子元素 innerText token jaccard</li>
+ *   <li>depthDistance 0.1：{@code 1/(1+depth)}，距 clicked 越近越好</li>
  * </ul>
  *
  * <p>score &gt;= 0.6 视为有效；并列分差 &lt; 0.05 时保留前 3 替代候选给 UI。
@@ -40,60 +51,48 @@ public class DomLevelCandidateListItemInferrer implements CandidateListItemInfer
     private static final double THRESHOLD = 0.6;
     private static final double TIE_DELTA = 0.05;
     private static final int MAX_ALTERNATIVES = 3;
+    private static final int SIBLING_SATURATE = 5;
 
     @Override
     public InferredCandidateListItem infer(DomSnapshot clicked) {
-        // 返回评分最高的祖先层作为最佳候选（spec §D3）
         List<Scored> all = scoreAll(clicked);
-        if (all.isEmpty()) {
-            return emptyResult();
+        if (all.isEmpty() || all.get(0).score < THRESHOLD) {
+            return InferredCandidateListItem.empty();
         }
-        Scored pick = all.get(0);
-        List<ListItemRule> alternatives = new ArrayList<>();
-        for (Scored s : all) {
-            if (s == pick) continue;
-            if (Math.abs(s.score - pick.score) <= TIE_DELTA
-                    && alternatives.size() < MAX_ALTERNATIVES) {
-                alternatives.add(s.rule);
-            }
-        }
-        return new InferredCandidateListItem(
-                pick.rule,
-                pick.matchCount,
-                pick.score,
-                ancestorPath(clicked, pick.depth),
-                pick.components,
-                alternatives);
+        return buildResult(clicked, all.get(0), all);
     }
 
     @Override
     public InferredCandidateListItem adjustAncestor(DomSnapshot clicked, Direction direction) {
+        // 注：步骤 5 "重跑 2–4" 字面含阈值过滤；但 adjustAncestor 是<b>用户驱动</b>的方向调整，
+        // 应允许探索低分候选（用户主动 UP/DOWN 时不应被阈值阻挡）。阈值仅作用于 infer 的初始
+        // 自动选择；adjustAncestor 在所有 matchCount ≥ 2 候选中找方向目标，target 的实际
+        // score 由 components 暴露给 UI 判断。
         List<Scored> all = scoreAll(clicked);
         if (all.isEmpty()) {
-            return emptyResult();
+            return InferredCandidateListItem.empty();
         }
         Scored top = all.get(0);
         int currentDepth = top.depth;
-        int target = direction == Direction.DOWN
-                ? Math.max(1, currentDepth - 1)
-                : Math.min(all.size(), currentDepth + 1);
-        return pickAtDepth(clicked, target, all);
+        // 方向感知：跳过无效层（matchCount < 2），找该方向上最近的候选容器。
+        // UP（更粗容器）：depth > current 中最小者；DOWN（更细容器）：depth < current 中最大者。
+        Scored target = (direction == Direction.UP)
+                ? all.stream().filter(s -> s.depth > currentDepth)
+                        .min(Comparator.comparingInt(s -> s.depth)).orElse(null)
+                : all.stream().filter(s -> s.depth < currentDepth)
+                        .max(Comparator.comparingInt(s -> s.depth)).orElse(null);
+        if (target == null) {
+            return InferredCandidateListItem.empty();
+        }
+        return buildResult(clicked, target, all);
     }
 
-    private InferredCandidateListItem pickAtDepth(DomSnapshot clicked, int targetDepth, List<Scored> scored) {
-        if (scored.isEmpty()) {
-            return emptyResult();
-        }
-        Scored pick = scored.stream()
-                .filter(s -> s.depth == targetDepth)
-                .findFirst()
-                .or(() -> scored.stream()
-                        .min(Comparator.comparingInt(s -> Math.abs(s.depth - targetDepth))))
-                .orElse(scored.get(0));
-        // 找并列替代候选：分差 ≤ 0.05
+    private InferredCandidateListItem buildResult(DomSnapshot clicked, Scored pick, List<Scored> all) {
         List<ListItemRule> alternatives = new ArrayList<>();
-        for (Scored s : scored) {
-            if (s == pick) continue;
+        for (Scored s : all) {
+            if (s == pick) {
+                continue;
+            }
             if (Math.abs(s.score - pick.score) <= TIE_DELTA
                     && alternatives.size() < MAX_ALTERNATIVES) {
                 alternatives.add(s.rule);
@@ -105,13 +104,8 @@ public class DomLevelCandidateListItemInferrer implements CandidateListItemInfer
                 pick.score,
                 ancestorPath(clicked, pick.depth),
                 pick.components,
-                alternatives);
-    }
-
-    private InferredCandidateListItem emptyResult() {
-        return new InferredCandidateListItem(
-                new ListItemRule("__no_match__", SelectorType.CSS),
-                0, 0.0, List.of(), List.of(), List.of());
+                alternatives,
+                false);
     }
 
     private List<AncestorHop> ancestorPath(DomSnapshot clicked, int upToDepth) {
@@ -123,94 +117,126 @@ public class DomLevelCandidateListItemInferrer implements CandidateListItemInfer
         return path;
     }
 
+    private static int maxScorableDepth(DomSnapshot clicked) {
+        return Math.min(clicked.ancestors().size() - 1, MAX_ANCESTOR_DEPTH);
+    }
+
     private List<Scored> scoreAll(DomSnapshot clicked) {
         List<Scored> all = new ArrayList<>();
-        int maxDepth = Math.min(clicked.ancestors().size() - 1, MAX_ANCESTOR_DEPTH);
+        int maxDepth = maxScorableDepth(clicked);
         for (int depth = 1; depth <= maxDepth; depth++) {
             Scored s = scoreAt(clicked, depth);
-            if (s != null && s.matchCount >= 2) {  // spec：候选须至少 2 个重复项
+            if (s != null && s.matchCount >= 2) {
                 all.add(s);
             }
         }
-        all.sort(Comparator.comparingDouble((Scored x) -> x.score).reversed());
+        all.sort(Comparator.comparingDouble((Scored x) -> x.score).reversed()
+                .thenComparingInt(x -> x.depth));
         return all;
     }
 
+    /**
+     * 对 depth 层祖先（容器）评分：其直接子元素中的多数派 = 列表项。
+     */
     private Scored scoreAt(DomSnapshot clicked, int depth) {
-        AncestorSnapshot ancestor = clicked.ancestors().get(depth);
-        int childCount = ancestor.childCount();
-        List<ElementSignature> sigs = ancestor.childSignatures();
-        if (sigs.isEmpty()) {
+        AncestorSnapshot container = clicked.ancestors().get(depth);
+        int childCount = container.childCount();
+        List<ElementSignature> sigs = container.childSignatures();
+        if (sigs == null || sigs.isEmpty() || childCount < 2) {
             return null;
         }
-        // siblingCount (0.4)：同类子元素占比 * min(count, 8)/8
-        double sameKindRatio = ratioSameKind(sigs, ancestor.tagName(), ancestor.className());
-        double siblingRaw = Math.min(childCount, 8) / 8.0 * sameKindRatio;
-        // structureSimilarity (0.3)：子结构 jaccard
-        double structRaw = pairwiseJaccard(sigs, DomLevelCandidateListItemInferrer::structureKey);
-        // textSimilarity (0.2)：子 innerText token jaccard
-        double textRaw = pairwiseJaccard(sigs, ElementSignature::textTokens);
-        // depthDistance (0.1)：1/(1+depth)
+        DominantChild dominant = dominantChild(sigs);
+        if (dominant == null || dominant.matchCount() < 2) {
+            return null;
+        }
+        List<ElementSignature> items = dominant.signatures();
+
+        // siblingCount (0.4)：多数派 item 数，min(count,5)/5 饱和
+        double siblingRaw = Math.min(dominant.matchCount(), SIBLING_SATURATE) / (double) SIBLING_SATURATE;
+        // structureSimilarity (0.3)：多数派 item 两两 structureKey jaccard（含 childTagCounts）
+        double structRaw = pairwiseJaccard(items, DomLevelCandidateListItemInferrer::structureKey);
+        // textSimilarity (0.2)：多数派 item textTokens jaccard
+        double textRaw = pairwiseJaccard(items, ElementSignature::textTokens);
+        // depthDistance (0.1)：1/(1+depth)，越近越好
         double depthRaw = 1.0 / (1 + depth);
 
         double weighted = siblingRaw * 0.4 + structRaw * 0.3 + textRaw * 0.2 + depthRaw * 0.1;
 
+        double sameKindRatio = (double) dominant.matchCount() / childCount;
         List<ScoreComponent> components = List.of(
-                new ScoreComponent("siblingCount", siblingRaw, siblingRaw * 0.4, "n=" + childCount + " sameRatio=" + sameKindRatio),
-                new ScoreComponent("structureSimilarity", structRaw, structRaw * 0.3, "jaccard over child structs"),
-                new ScoreComponent("textSimilarity", textRaw, textRaw * 0.2, "jaccard over text tokens"),
+                new ScoreComponent("siblingCount", siblingRaw, siblingRaw * 0.4,
+                        "items=" + dominant.matchCount() + " of children=" + childCount + " ratio=" + sameKindRatio),
+                new ScoreComponent("structureSimilarity", structRaw, structRaw * 0.3,
+                        "jaccard over item structureKeys (incl childTagCounts)"),
+                new ScoreComponent("textSimilarity", textRaw, textRaw * 0.2, "jaccard over item text tokens"),
                 new ScoreComponent("depthDistance", depthRaw, depthRaw * 0.1, "depth=" + depth));
-        ListItemRule rule = buildRule(ancestor);
-        return new Scored(depth, rule, childCount, weighted, components);
+        ListItemRule rule = buildRule(dominant);
+        return new Scored(depth, rule, dominant.matchCount(), weighted, components);
     }
 
     /**
-     * siblings 自身 tag 一致性（spec §D3 "直接子元素 ≥ 2 且同类"）。
-     *
-     * <p>"同类" = 第一项的 tagName 占所有 sibling 比例；不与 ancestor tag 比较
-     * （否则 tr 容器下 td 子元素会被错认为 0 同类）。
+     * 多数派子元素：按 (tag, firstClass) 分组，取数量最多的一组。同数时取首个出现者。
      */
-    private static double ratioSameKind(List<ElementSignature> sigs, String ancTag, String ancClass) {
-        if (sigs.isEmpty()) return 0.0;
-        ElementSignature first = sigs.get(0);
-        if (first == null || first.tagName() == null) return 0.0;
-        String firstTag = first.tagName();
-        long same = sigs.stream()
-                .filter(sig -> firstTag.equalsIgnoreCase(sig.tagName()))
-                .count();
-        return (double) same / sigs.size();
+    private static DominantChild dominantChild(List<ElementSignature> sigs) {
+        LinkedHashMap<String, List<ElementSignature>> groups = new LinkedHashMap<>();
+        for (ElementSignature sig : sigs) {
+            if (sig == null || sig.tagName() == null) {
+                continue;
+            }
+            String key = kindKey(sig);
+            groups.computeIfAbsent(key, k -> new ArrayList<>()).add(sig);
+        }
+        String bestKey = null;
+        int bestCount = 0;
+        for (Map.Entry<String, List<ElementSignature>> e : groups.entrySet()) {
+            if (e.getValue().size() > bestCount) {
+                bestCount = e.getValue().size();
+                bestKey = e.getKey();
+            }
+        }
+        if (bestKey == null) {
+            return null;
+        }
+        return new DominantChild(bestKey, groups.get(bestKey));
+    }
+
+    private static String kindKey(ElementSignature sig) {
+        String tag = sig.tagName().toLowerCase(Locale.ROOT);
+        String cls = firstClass(sig.className());
+        return cls.isEmpty() ? tag : tag + "." + cls;
     }
 
     /**
      * 对子元素签名两两计算 jaccard，取平均。
      */
     private static double pairwiseJaccard(List<ElementSignature> sigs,
-                                          java.util.function.Function<ElementSignature, ?> keyFn) {
-        if (sigs.size() < 2) return 0.0;
+                                          java.util.function.Function<ElementSignature, Set<String>> keyFn) {
+        if (sigs.size() < 2) {
+            return 0.0;
+        }
         int pairs = 0;
         double sum = 0;
         for (int i = 0; i < sigs.size(); i++) {
             for (int j = i + 1; j < sigs.size(); j++) {
-                sum += jaccardOf(sigs.get(i), sigs.get(j), keyFn);
+                Set<String> a = keyFn.apply(sigs.get(i));
+                Set<String> b = keyFn.apply(sigs.get(j));
+                sum += jaccard(a, b);
                 pairs++;
             }
         }
         return pairs == 0 ? 0.0 : sum / pairs;
     }
 
-    @SuppressWarnings("unchecked")
-    private static double jaccardOf(ElementSignature a, ElementSignature b,
-                                    java.util.function.Function<ElementSignature, ?> keyFn) {
-        Object oa = keyFn.apply(a);
-        Object ob = keyFn.apply(b);
-        if (!(oa instanceof Set) || !(ob instanceof Set)) return 0.0;
-        Set<String> sa = new HashSet<>((Set<String>) oa);
-        Set<String> sb = new HashSet<>((Set<String>) ob);
-        if (sa.isEmpty() && sb.isEmpty()) return 0.0;
-        Set<String> intersect = new LinkedHashSet<>(sa);
-        intersect.retainAll(sb);
-        Set<String> union = new LinkedHashSet<>(sa);
-        union.addAll(sb);
+    private static double jaccard(Set<String> a, Set<String> b) {
+        if (a == null) a = Set.of();
+        if (b == null) b = Set.of();
+        if (a.isEmpty() && b.isEmpty()) {
+            return 0.0;
+        }
+        Set<String> intersect = new LinkedHashSet<>(a);
+        intersect.retainAll(b);
+        Set<String> union = new LinkedHashSet<>(a);
+        union.addAll(b);
         return union.isEmpty() ? 0.0 : (double) intersect.size() / union.size();
     }
 
@@ -223,26 +249,47 @@ public class DomLevelCandidateListItemInferrer implements CandidateListItemInfer
             }
         }
         keys.addAll(sig.attributeKeys());
+        // childTagCounts 进 structureKey：区分"子结构一致"与"子结构各异"
+        if (sig.childTagCounts() != null && !sig.childTagCounts().isEmpty()) {
+            List<String> tags = new ArrayList<>(sig.childTagCounts().keySet());
+            tags.sort(String::compareTo);
+            for (String t : tags) {
+                keys.add("child:" + t.toLowerCase(Locale.ROOT) + ":" + sig.childTagCounts().get(t));
+            }
+        }
         return keys;
     }
 
-    private static ListItemRule buildRule(AncestorSnapshot a) {
-        String tag = a.tagName() == null ? "div" : a.tagName().toLowerCase(Locale.ROOT);
-        if (a.className() != null && !a.className().isBlank()) {
-            String firstClass = a.className().split("\\s+")[0];
-            return new ListItemRule(tag + "." + firstClass, SelectorType.CSS);
+    private static ListItemRule buildRule(DominantChild dominant) {
+        ElementSignature sample = dominant.signatures().get(0);
+        String tag = sample.tagName() == null ? "div" : sample.tagName().toLowerCase(Locale.ROOT);
+        String cls = firstClass(sample.className());
+        if (!cls.isEmpty()) {
+            return new ListItemRule(tag + "." + cls, SelectorType.CSS);
         }
         return new ListItemRule(tag, SelectorType.CSS);
+    }
+
+    private static String firstClass(String className) {
+        if (className == null || className.isBlank()) {
+            return "";
+        }
+        return className.trim().split("\\s+")[0];
     }
 
     private static String tagAndClass(String tag, String cls) {
         if (tag == null) {
             return "";
         }
-        if (cls == null || cls.isBlank()) {
-            return tag;
+        String first = firstClass(cls);
+        return first.isEmpty() ? tag : tag + "." + first;
+    }
+
+    /** 多数派子元素分组结果。 */
+    private record DominantChild(String kindKey, List<ElementSignature> signatures) {
+        int matchCount() {
+            return signatures.size();
         }
-        return tag + "." + cls.split("\\s+")[0];
     }
 
     /** 内部评分结果，{@code depth} 1..N 表示祖先层深度。 */

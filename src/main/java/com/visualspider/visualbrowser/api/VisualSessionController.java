@@ -3,15 +3,19 @@ package com.visualspider.visualbrowser.api;
 import com.visualspider.identity.domain.ActorId;
 import com.visualspider.identity.spi.IdentityAccess;
 import com.visualspider.task.spi.TaskCatalog;
+import com.visualspider.extraction.spi.CandidateListItemInferrer;
 import com.visualspider.extraction.spi.ExtractionPreview;
+import com.visualspider.extraction.spi.InferredCandidateListItem;
 import com.visualspider.extraction.spi.PreviewResult;
 import com.visualspider.task.domain.TaskDefinition;
+import com.visualspider.visualbrowser.ViewportMapper;
 import com.visualspider.visualbrowser.internal.DefaultVisualSessionManager;
 import com.visualspider.visualbrowser.internal.EditingBuffer;
 import com.visualspider.visualbrowser.internal.SelectorValidationService;
 import com.visualspider.visualbrowser.internal.TaskNotOpenableException;
 import com.visualspider.visualbrowser.internal.VisualSessionNotFoundException;
 import com.visualspider.visualbrowser.spi.VisualSession;
+import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Positive;
 import java.util.ArrayList;
@@ -43,19 +47,22 @@ public class VisualSessionController {
     private final SelectorValidationService selectorValidationService;
     private final ExtractionPreview extractionPreview;
     private final EditingBuffer editingBuffer;
+    private final CandidateListItemInferrer inferrer;
 
     public VisualSessionController(IdentityAccess identityAccess,
                                    DefaultVisualSessionManager manager,
                                    TaskCatalog taskCatalog,
                                    SelectorValidationService selectorValidationService,
                                    ExtractionPreview extractionPreview,
-                                   EditingBuffer editingBuffer) {
+                                   EditingBuffer editingBuffer,
+                                   CandidateListItemInferrer inferrer) {
         this.identityAccess = identityAccess;
         this.manager = manager;
         this.taskCatalog = taskCatalog;
         this.selectorValidationService = selectorValidationService;
         this.extractionPreview = extractionPreview;
         this.editingBuffer = editingBuffer;
+        this.inferrer = inferrer;
     }
 
     @PostMapping
@@ -157,6 +164,36 @@ public class VisualSessionController {
                 .orElseThrow(() -> new VisualSessionNotFoundException(sessionId));
         // 在 lane 线程上对当前 Page 执行预览；不写库（spec §D11 / §D13）。
         return legacy.preview(definition, extractionPreview);
+    }
+
+    /**
+     * 候选列表项推断（M4-2 #32 / spec §D3）：按视口坐标采集 DOM 摘要，调用 inferrer 输出
+     * {@link InferredCandidateListItem}。前端用此驱动 list mode 配置流程。
+     *
+     * <p>仅做参数校验 + 所有权转交；不写库。坐标越界 / 元素未命中由 {@code PlaywrightControl}
+     * 与 {@link ViewportMapper} 抛业务异常，由 {@code GlobalExceptionHandler} 映射稳定错误码。
+     */
+    @PostMapping("/{sessionId}/infer")
+    public InferResponse infer(@PathVariable @NotNull String sessionId,
+                               @RequestBody @Valid InferRequest request) {
+        ActorId actor = identityAccess.currentActor();
+        VisualSession owned = manager.requireOwnedBy(sessionId, actor);
+        if (owned.lifecycle() == com.visualspider.visualbrowser.spi.SessionLifecycleState.CLOSED) {
+            throw new VisualSessionNotFoundException(sessionId);
+        }
+        int[] r = ViewportMapper.toRemote(request.x(), request.y(),
+                request.clientWidth(), request.clientHeight());
+        if (r == null) {
+            throw new IllegalArgumentException("坐标越界: clientW=" + request.clientWidth()
+                    + " clientH=" + request.clientHeight());
+        }
+        var legacy = manager.legacySession(sessionId)
+                .orElseThrow(() -> new VisualSessionNotFoundException(sessionId));
+        // captureDomSnapshot 在 lane 线程上 evaluate，不保存 ElementHandle（spec §D3）；
+        // 阻塞语义与 legacy.preview 一致（不向 Web 线程泄漏 CompletableFuture）。
+        com.visualspider.extraction.spi.DomSnapshot snap = legacy.captureDomSnapshot(r[0], r[1]);
+        InferredCandidateListItem result = inferrer.infer(snap);
+        return InferResponse.from(result);
     }
 
     public record OpenRequest(@Positive long taskId) {}

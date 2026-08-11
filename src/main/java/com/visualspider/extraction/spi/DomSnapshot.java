@@ -49,12 +49,18 @@ public record DomSnapshot(
 
     /**
      * 一个子元素的签名：用于结构相似度计算（M4 spec §D3 结构 jaccard）。
+     *
+     * <p>{@code childTagCounts} = 该元素直接子元素的 tag -> 计数（如 {@code {td:3}}）。
+     * M4-2 (#32) 新增：让 structureSimilarity 能区分"同 tag 但子结构不同"的容器
+     *（如 {@code <tr>} 的 3 个 {@code <td>} 字段格 vs {@code <tbody>} 的 5 个 {@code <tr>} 行），
+     * 避免 inferrer 把"单元格相似的行"误判为列表项容器。
      */
     public record ElementSignature(
             String tagName,
             String className,
             java.util.Set<String> attributeKeys,
-            java.util.Set<String> textTokens) {
+            java.util.Set<String> textTokens,
+            Map<String, Integer> childTagCounts) {
 
         public ElementSignature {
             if (attributeKeys == null) {
@@ -63,6 +69,16 @@ public record DomSnapshot(
             if (textTokens == null) {
                 textTokens = java.util.Set.of();
             }
+            if (childTagCounts == null) {
+                childTagCounts = Map.of();
+            }
+        }
+
+        /** 兼容旧构造（无 childTagCounts，视为无子元素）。 */
+        public ElementSignature(String tagName, String className,
+                                java.util.Set<String> attributeKeys,
+                                java.util.Set<String> textTokens) {
+            this(tagName, className, attributeKeys, textTokens, Map.of());
         }
     }
 }

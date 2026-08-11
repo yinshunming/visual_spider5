@@ -3,7 +3,10 @@ package com.visualspider.visualbrowser;
 import com.microsoft.playwright.Page;
 import com.microsoft.playwright.options.BoundingBox;
 import com.microsoft.playwright.options.ScreenshotType;
+import com.visualspider.extraction.spi.DomSnapshot;
+import com.visualspider.visualbrowser.internal.DomSnapshotExtractor;
 
+import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 
 /**
@@ -222,6 +225,69 @@ public final class PlaywrightControl {
         return lane.submit(() -> {
             page().waitForSelector(selector);
             return null;
+        });
+    }
+
+    /**
+     * 候选列表项推断：从视口坐标采集 clicked 元素及其祖先链 + 每层 childSignatures，
+     * 构造 {@link DomSnapshot}（M4-2 #32 / spec §D3）。
+     *
+     * <p>在 lane 线程上执行 {@code elementFromPoint + walk to 10 ancestors}，
+     * 不保存 {@code ElementHandle}，结果为不可变 {@link DomSnapshot}（每次按需重新查询）。
+     * 坐标必须为远程视口 CSS 像素（1280×720），调用方做客户端→远程换算
+     * （{@link ViewportMapper#toRemote}）。
+     *
+     * <p>点击处无元素（{@code elementFromPoint} 返 null）时返回的 future 以
+     * {@link IllegalArgumentException} 异常完成。
+     */
+    @SuppressWarnings("unchecked")
+    public CompletableFuture<DomSnapshot> captureDomSnapshot(int remoteX, int remoteY) {
+        return lane.submit(() -> {
+            String js = "(args) => {"
+                    + "  const el = document.elementFromPoint(args.x, args.y);"
+                    + "  if (!el) return null;"
+                    + "  function sig(node) {"
+                    + "    const attrs = [];"
+                    + "    for (const a of node.attributes || []) attrs.push(a.name);"
+                    + "    const text = (node.textContent || '').trim();"
+                    + "    const tokens = text.split(/\\s+/).filter(t => t.length > 0).slice(0, 20);"
+                    + "    const childTags = {};"
+                    + "    for (const c of node.children || []) {"
+                    + "      childTags[c.tagName] = (childTags[c.tagName] || 0) + 1;"
+                    + "    }"
+                    + "    return { tagName: node.tagName, className: node.className || '',"
+                    + "      attributeKeys: attrs, textTokens: tokens, childTagCounts: childTags };"
+                    + "  }"
+                    + "  function snap(node) {"
+                    + "    const children = Array.from(node.children || []);"
+                    + "    const attrs = {};"
+                    + "    for (const a of node.attributes || []) attrs[a.name] = a.value;"
+                    + "    return { tagName: node.tagName, className: node.className || '',"
+                    + "      attributes: attrs,"
+                    + "      innerTextSnippet: (node.textContent || '').trim().substring(0, 200),"
+                    + "      childCount: children.length,"
+                    + "      childSignatures: children.map(sig) };"
+                    + "  }"
+                    + "  const ancestors = [];"
+                    + "  let cur = el;"
+                    + "  let depth = 0;"
+                    + "  while (cur && cur.nodeType === 1 && depth < 10) {"
+                    + "    ancestors.push(snap(cur));"
+                    + "    cur = cur.parentElement;"
+                    + "    depth++;"
+                    + "  }"
+                    + "  const clickedAttrs = {};"
+                    + "  for (const a of el.attributes || []) clickedAttrs[a.name] = a.value;"
+                    + "  return { tagName: el.tagName, className: el.className || '',"
+                    + "    attributes: clickedAttrs,"
+                    + "    innerTextSnippet: (el.textContent || '').trim().substring(0, 200),"
+                    + "    ancestors: ancestors };"
+                    + "}";
+            Object result = page().evaluate(js, Map.of("x", remoteX, "y", remoteY));
+            if (result == null) {
+                throw new IllegalArgumentException("坐标 (" + remoteX + "," + remoteY + ") 处无元素");
+            }
+            return DomSnapshotExtractor.extract((Map<String, Object>) result);
         });
     }
 

@@ -226,4 +226,18 @@ public final class VisualSession implements AutoCloseable {
         }
         lane.close();
     }
+
+    /**
+     * 在当前 lane/Page 上按远程视口坐标采集 {@link com.visualspider.extraction.spi.DomSnapshot}
+     * （M4-2 #32 / spec §D3）。与 {@link #preview} 同一线程模型：在 lane 线程上 evaluate，
+     * 主线程阻塞等待；不暴露 {@link java.util.concurrent.CompletableFuture} 给 Web 线程
+     * （architecture §4.1）。
+     *
+     * @param remoteX 远程视口 CSS 像素 x（1280×720），由 {@link ViewportMapper#toRemote} 换算
+     * @param remoteY 远程视口 CSS 像素 y
+     * @throws IllegalArgumentException 当坐标处无 DOM 元素（{@code elementFromPoint} 返 null）
+     */
+    public com.visualspider.extraction.spi.DomSnapshot captureDomSnapshot(int remoteX, int remoteY) {
+        return control.captureDomSnapshot(remoteX, remoteY).join();
+    }
 }
