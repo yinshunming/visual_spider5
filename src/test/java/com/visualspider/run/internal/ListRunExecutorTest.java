@@ -109,7 +109,7 @@ class ListRunExecutorTest {
         // 0 计数 → state=SUCCESS（spec §D7 else 分支），但 reason 被 timeLimitExceeded 覆盖
         verify(repository, atLeastOnce())
                 .markTerminal(eq(11L), eq(RunState.SUCCESS), eq(StopReason.TIME_LIMIT));
-        // 只能有 2 次空 events 调用（list-iter-start + terminal），不应有 result 写入
+        // 只能有 2 次空 events 调用（LIST_ITER_START + terminal），不应有 result 写入
         verify(resultSink, times(2)).appendBatch(eq(11L), eq(List.of()), any());
     }
 
@@ -124,8 +124,8 @@ class ListRunExecutorTest {
         newExecutor().execute(ctx, 11L);
         verify(repository, atLeastOnce())
                 .markTerminal(eq(11L), eq(RunState.SUCCESS), eq(StopReason.PAGE_LIMIT));
-        // 应 appendBatch 2 次 result（每次 1 record）+ 1 次 terminal 事件
-        verify(resultSink, atLeastOnce()).appendBatch(eq(11L), any(), any());
+        // 2 result 写 + 2 LIST_ITEM_EXTRACTED 事件 + 1 LIST_ITER_START + 1 terminal = 6 次
+        verify(resultSink, times(6)).appendBatch(eq(11L), any(), any());
     }
 
     private ListRunExecutor newExecutor() {

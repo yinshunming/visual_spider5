@@ -163,12 +163,12 @@ class ListRunPartialFailIT {
         assertThat(counts.get("record_count_final")).isEqualTo(2);
         assertThat(counts.get("fail_count")).isEqualTo(1);
 
-        // 6) 校验 run_event 序列：list-iter-start + LIST_ITEM_EXTRACTED + LIST_ITEM_FAILED + terminal
+        // 6) 校验 run_event 序列：LIST_ITER_START + LIST_ITEM_EXTRACTED + LIST_ITEM_FAILED + terminal
         List<String> stages = jdbc.queryForList(
                 "SELECT level || '/' || stage FROM run_event WHERE run_id = ? ORDER BY id",
                 String.class, runId);
         assertThat(stages).contains(
-                "INFO/list-iter-start",
+                "INFO/LIST_ITER_START",
                 "INFO/LIST_ITEM_EXTRACTED",
                 "WARN/LIST_ITEM_FAILED",
                 "INFO/terminal");
@@ -187,23 +187,6 @@ class ListRunPartialFailIT {
                 new ListItemRule("ul > li", SelectorType.CSS),
                 List.of(new UniqueKeyField("title")),
                 List.of(title));
-    }
-
-    /**
-     * Delegating RunResultSink：默认转发到下游；子类可覆盖单条行为模拟行级失败。
-     */
-    static class DelegatingSink implements RunResultSink {
-        protected final RunResultSink delegate;
-
-        DelegatingSink(RunResultSink delegate) {
-            this.delegate = delegate;
-        }
-
-        @Override
-        public BatchOutcome appendBatch(long runId, List<ResultRecord> results,
-                                        List<RunEventInput> events) {
-            return delegate.appendBatch(runId, results, events);
-        }
     }
 
     /**

@@ -159,6 +159,7 @@ class ListRunIT {
             throw new AssertionError("run 未达 SUCCESS，终态=" + status + "，事件:\n"
                     + dumpEvents(runId));
         }
+        assertStopReason(runId, "COMPLETED");
 
         Map<String, Object> row = jdbc.queryForMap(
                 "SELECT record_count_raw, record_count_dedup, record_count_final, fail_count "
@@ -179,7 +180,7 @@ class ListRunIT {
                 String.class, runId);
         assertThat(counts).containsExactly("10", "20", "30", "40", "50");
 
-        assertRunEventSequence(runId, "INFO", "list-iter-start",
+        assertRunEventSequence(runId, "INFO", "LIST_ITER_START",
                 "INFO", "LIST_ITEM_EXTRACTED",
                 "INFO", "LIST_ITEM_EXTRACTED",
                 "INFO", "LIST_ITEM_EXTRACTED",
@@ -218,6 +219,7 @@ class ListRunIT {
             throw new AssertionError("run 未达 SUCCESS，终态=" + status + "，事件:\n"
                     + dumpEvents(runId));
         }
+        assertStopReason(runId, "COMPLETED");
 
         Map<String, Object> row = jdbc.queryForMap(
                 "SELECT record_count_raw, record_count_dedup, record_count_final, fail_count "
@@ -239,6 +241,13 @@ class ListRunIT {
                 "SELECT count(*) FROM run_event WHERE run_id = ? AND stage = 'LIST_ITEM_DEDUPED'",
                 Long.class, runId);
         assertThat(dedupedCount).isEqualTo(2L);
+    }
+
+    private void assertStopReason(long runId, String expected) {
+        String stopReason = jdbc.queryForObject(
+                "SELECT stop_reason FROM collection_run WHERE id = ?",
+                String.class, runId);
+        assertThat(stopReason).isEqualTo(expected);
     }
 
     private String dumpEvents(long runId) {

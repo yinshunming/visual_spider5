@@ -132,7 +132,7 @@ public class ListRunExecutor implements RunExecutor {
                     "listItemRule query failed: " + safeMessage(ex));
             return;
         }
-        tryEmitEvent(runId, RunEventLevel.INFO, "list-iter-start", page.currentUrl(), null,
+        tryEmitEvent(runId, RunEventLevel.INFO, "LIST_ITER_START", page.currentUrl(), null,
                 "items=" + items.size());
         int sequenceNo = 1;
         for (Node item : items) {
@@ -153,7 +153,7 @@ public class ListRunExecutor implements RunExecutor {
                     page.currentUrl());
             if (outcome.failedCount() > 0) {
                 tryEmitEvent(runId, RunEventLevel.WARN, "LIST_ITEM_FAILED", page.currentUrl(),
-                        "LIST_ITEM_FAILED", "seq=" + seq);
+                        null, "seq=" + seq);
             } else if (outcome.dedupCount() > 0) {
                 tryEmitEvent(runId, RunEventLevel.INFO, "LIST_ITEM_DEDUPED", page.currentUrl(),
                         null, "seq=" + seq);
@@ -167,16 +167,17 @@ public class ListRunExecutor implements RunExecutor {
 
     private BatchOutcome writeOneRecord(long runId, PreviewResult pr, TaskDefinition def,
                                         int sequenceNo, String finalUrl) {
-        // 过滤掉 cleanedValue 为 null 的字段（list-item 缺字段是常见场景，spec §D7 不要求失败，
-        // 但 ResultRecord 的 Map.copyOf 不允许 null value）。保留 key 集合与 task 定义一致，便于
-        // hash 计算与去重语义稳定。
+        // 缺字段 cleanedValue == null 时直接跳过该字段（不入 data map），同时让
+        // UniqueKeyHasher 看到 "key 缺失" 走 spec §D5 全/部分空键 → null 路径，
+        // 整 record 不参与 dedup，与 M4-3 UniqueKeyHasher 行为一致。
+        // 早先错误地把 null 替换为 "" 会让"title 缺失"的 record 算出空串 hash，
+        // 把多条都判为同一 record，破坏去重语义。
         Map<String, String> data = new LinkedHashMap<>();
         for (PreviewResult.FieldOutcome out : pr.fieldOutcomes()) {
             String value = out.cleanedValue();
-            if (value == null) {
-                value = "";
+            if (value != null) {
+                data.put(out.fieldName(), value);
             }
-            data.put(out.fieldName(), value);
         }
         byte[] hash = null;
         if (def.uniqueKey() != null && !def.uniqueKey().isEmpty()) {
