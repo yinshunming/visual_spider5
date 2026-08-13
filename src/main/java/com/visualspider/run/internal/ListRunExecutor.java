@@ -148,14 +148,18 @@ public class ListRunExecutor implements RunExecutor {
             }
             PreviewResult pr = preview.preview(def, scoped);
             context.incrementPageCount();
-            BatchOutcome outcome = writeOneRecord(runId, pr, def, sequenceNo++,
+            int seq = sequenceNo++;
+            BatchOutcome outcome = writeOneRecord(runId, pr, def, seq,
                     page.currentUrl());
             if (outcome.failedCount() > 0) {
-                tryEmitEvent(runId, RunEventLevel.WARN, "list-item-failed", page.currentUrl(),
-                        "LIST_ITEM_FAILED", "seq=" + sequenceNo);
+                tryEmitEvent(runId, RunEventLevel.WARN, "LIST_ITEM_FAILED", page.currentUrl(),
+                        "LIST_ITEM_FAILED", "seq=" + seq);
+            } else if (outcome.dedupCount() > 0) {
+                tryEmitEvent(runId, RunEventLevel.INFO, "LIST_ITEM_DEDUPED", page.currentUrl(),
+                        null, "seq=" + seq);
             } else if (outcome.insertedCount() > 0) {
-                tryEmitEvent(runId, RunEventLevel.INFO, "list-item-extracted",
-                        page.currentUrl(), null, "seq=" + sequenceNo);
+                tryEmitEvent(runId, RunEventLevel.INFO, "LIST_ITEM_EXTRACTED", page.currentUrl(),
+                        null, "seq=" + seq);
             }
         }
         computeTerminal(context, runId, def);
@@ -163,9 +167,16 @@ public class ListRunExecutor implements RunExecutor {
 
     private BatchOutcome writeOneRecord(long runId, PreviewResult pr, TaskDefinition def,
                                         int sequenceNo, String finalUrl) {
+        // 过滤掉 cleanedValue 为 null 的字段（list-item 缺字段是常见场景，spec §D7 不要求失败，
+        // 但 ResultRecord 的 Map.copyOf 不允许 null value）。保留 key 集合与 task 定义一致，便于
+        // hash 计算与去重语义稳定。
         Map<String, String> data = new LinkedHashMap<>();
         for (PreviewResult.FieldOutcome out : pr.fieldOutcomes()) {
-            data.put(out.fieldName(), out.cleanedValue());
+            String value = out.cleanedValue();
+            if (value == null) {
+                value = "";
+            }
+            data.put(out.fieldName(), value);
         }
         byte[] hash = null;
         if (def.uniqueKey() != null && !def.uniqueKey().isEmpty()) {

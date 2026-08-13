@@ -156,11 +156,8 @@ class ListRunIT {
 
         String status = pollTerminal(runId, Duration.ofSeconds(40));
         if (!"SUCCESS".equals(status)) {
-            List<String> events = jdbc.queryForList(
-                    "SELECT level || '/' || stage || ': ' || message FROM run_event "
-                            + "WHERE run_id = ? ORDER BY id",
-                    String.class, runId);
-            throw new AssertionError("run 未达 SUCCESS，终态=" + status + "，事件:\n" + String.join("\n", events));
+            throw new AssertionError("run 未达 SUCCESS，终态=" + status + "，事件:\n"
+                    + dumpEvents(runId));
         }
 
         Map<String, Object> row = jdbc.queryForMap(
@@ -181,6 +178,102 @@ class ListRunIT {
                 "SELECT data->>'count' FROM run_result WHERE run_id = ? ORDER BY sequence_no ASC",
                 String.class, runId);
         assertThat(counts).containsExactly("10", "20", "30", "40", "50");
+
+        assertRunEventSequence(runId, "INFO", "list-iter-start",
+                "INFO", "LIST_ITEM_EXTRACTED",
+                "INFO", "LIST_ITEM_EXTRACTED",
+                "INFO", "LIST_ITEM_EXTRACTED",
+                "INFO", "LIST_ITEM_EXTRACTED",
+                "INFO", "LIST_ITEM_EXTRACTED",
+                "INFO", "terminal");
+    }
+
+    @Test
+    @DisplayName("with-duplicates fixture：5 行 2 重复 -> raw=5/dedup=2/final=3 + LIST_ITEM_DEDUPED 事件")
+    void listRunWithDuplicates() throws Exception {
+        // 重新插入使用 with-duplicates fixture 的 task + run
+        jdbc.update("DELETE FROM run_result WHERE run_id = ?", runId);
+        jdbc.update("DELETE FROM run_event WHERE run_id = ?", runId);
+        jdbc.update("DELETE FROM collection_run WHERE id = ?", runId);
+        jdbc.update("DELETE FROM collection_task WHERE id = ?", taskId);
+
+        TaskDefinition def = listDefinitionFor("with-duplicates.html");
+        String definitionJson = objectMapper.writeValueAsString(def);
+        taskId = jdbc.queryForObject(
+                "INSERT INTO collection_task (owner_id, name, mode, status, schema_version, definition) "
+                        + "VALUES (?, 'it-list-task-dup', 'LIST', 'READY', 2, ?::jsonb) RETURNING id",
+                Long.class, userId, definitionJson);
+
+        TaskSnapshot snapshot = new TaskSnapshot(taskId, userId, "it-list-task-dup",
+                new TaskMode.List(), 2, 1L, def);
+        String snapshotJson = objectMapper.writeValueAsString(snapshot);
+        runId = jdbc.queryForObject(
+                "INSERT INTO collection_run (task_id, owner_id, snapshot, status) "
+                        + "VALUES (?, ?, ?::jsonb, 'WAITING') RETURNING id",
+                Long.class, taskId, userId, snapshotJson);
+
+        dispatcher.dispatchOnceForTest();
+        String status = pollTerminal(runId, Duration.ofSeconds(40));
+        if (!"SUCCESS".equals(status)) {
+            throw new AssertionError("run 未达 SUCCESS，终态=" + status + "，事件:\n"
+                    + dumpEvents(runId));
+        }
+
+        Map<String, Object> row = jdbc.queryForMap(
+                "SELECT record_count_raw, record_count_dedup, record_count_final, fail_count "
+                        + "FROM collection_run WHERE id = ?",
+                runId);
+        assertThat(row.get("record_count_raw")).isEqualTo(5);
+        assertThat(row.get("record_count_dedup")).isEqualTo(2);
+        assertThat(row.get("record_count_final")).isEqualTo(3);
+        assertThat(row.get("fail_count")).isEqualTo(0);
+
+        // 5 行里 2 重复（Alpha + Beta 各重复一次），去重后剩 3 条
+        List<String> titles = jdbc.queryForList(
+                "SELECT data->>'title' FROM run_result WHERE run_id = ? ORDER BY sequence_no ASC",
+                String.class, runId);
+        assertThat(titles).containsExactlyInAnyOrder("Alpha", "Beta", "Gamma");
+
+        // 验证 2 条 LIST_ITEM_DEDUPED 事件
+        Long dedupedCount = jdbc.queryForObject(
+                "SELECT count(*) FROM run_event WHERE run_id = ? AND stage = 'LIST_ITEM_DEDUPED'",
+                Long.class, runId);
+        assertThat(dedupedCount).isEqualTo(2L);
+    }
+
+    private String dumpEvents(long runId) {
+        List<String> events = jdbc.queryForList(
+                "SELECT level || '/' || stage || ': ' || message FROM run_event "
+                        + "WHERE run_id = ? ORDER BY id",
+                String.class, runId);
+        return String.join("\n", events);
+    }
+
+    /**
+     * 校验 run_event 序列中按 (level, stage) 顺序出现的子序列都被找到；
+     * 不要求中间无其他事件，但 level 数组 / stage 数组必须按出现顺序完全匹配。
+     */
+    private void assertRunEventSequence(long runId, String... levelAndStagePairs) {
+        if (levelAndStagePairs.length % 2 != 0) {
+            throw new IllegalArgumentException("levelAndStagePairs 必须成对 (level, stage)");
+        }
+        List<String> allLevels = jdbc.queryForList(
+                "SELECT level FROM run_event WHERE run_id = ? ORDER BY id",
+                String.class, runId);
+        List<String> allStages = jdbc.queryForList(
+                "SELECT stage FROM run_event WHERE run_id = ? ORDER BY id",
+                String.class, runId);
+        int idx = 0;
+        for (int i = 0; i < allLevels.size() && idx < levelAndStagePairs.length; i++) {
+            if (allLevels.get(i).equals(levelAndStagePairs[idx * 2])
+                    && allStages.get(i).equals(levelAndStagePairs[idx * 2 + 1])) {
+                idx++;
+            }
+        }
+        if (idx != levelAndStagePairs.length / 2) {
+            throw new AssertionError("run_event 序列不匹配：期望找到 " + (levelAndStagePairs.length / 2)
+                    + " 对，实际找到 " + idx + " 对；实际事件:\n" + dumpEvents(runId));
+        }
     }
 
     private String pollTerminal(long runId, Duration timeout) throws InterruptedException {
@@ -197,6 +290,10 @@ class ListRunIT {
     }
 
     private TaskDefinition listDefinition() {
+        return listDefinitionFor("standard-list.html");
+    }
+
+    private TaskDefinition listDefinitionFor(String fixtureFile) {
         FieldDefinition title = new FieldDefinition("title", FieldSource.VISIBLE_TEXT,
                 ".title", null, SelectorType.CSS, ResultType.TEXT, TrimPolicy.TRIM, null, true);
         FieldDefinition date = new FieldDefinition("date", FieldSource.VISIBLE_TEXT,
@@ -206,7 +303,7 @@ class ListRunIT {
         return new TaskDefinition(
                 2,
                 new TaskMode.List(),
-                "http://localhost:" + fixturePort + "/standard-list.html",
+                "http://localhost:" + fixturePort + "/" + fixtureFile,
                 Viewport.DEFAULT,
                 new WaitPolicy(0),
                 new Limits(200, 10_000, Duration.ofMinutes(30)),

@@ -93,6 +93,41 @@ class ListRunExecutorTest {
         verify(repository, atLeastOnce()).markTerminal(anyLong(), any(RunState.class), any(StopReason.class));
     }
 
+    @Test
+    @DisplayName("启动即超 30min → 不处理任何 item → SUCCESS + TIME_LIMIT")
+    void timeLimitExceeded() {
+        commonNavigation();
+        domItems.set(List.of(new Node("tr", "", "v-0", "", java.util.Map.of()),
+                new Node("tr", "", "v-1", "", java.util.Map.of()),
+                new Node("tr", "", "v-2", "", java.util.Map.of())));
+        stubRepositoryFinal(0, 0);
+        // 起始时间设为 31min 前，第一轮 check 即 timeLimitExceeded=true
+        RunExecutionContext ctx = new RunExecutionContext(
+                System.currentTimeMillis() - 31L * 60 * 1000L,
+                30L * 60 * 1000L, 200, 10_000, pageHandle);
+        newExecutor().execute(ctx, 11L);
+        // 0 计数 → state=SUCCESS（spec §D7 else 分支），但 reason 被 timeLimitExceeded 覆盖
+        verify(repository, atLeastOnce())
+                .markTerminal(eq(11L), eq(RunState.SUCCESS), eq(StopReason.TIME_LIMIT));
+        // 只能有 2 次空 events 调用（list-iter-start + terminal），不应有 result 写入
+        verify(resultSink, times(2)).appendBatch(eq(11L), eq(List.of()), any());
+    }
+
+    @Test
+    @DisplayName("page limit 上限触发：maxPages=2 + 3 item → 处理 2 条后 break + PAGE_LIMIT")
+    void pageLimitExceeded() {
+        stubAllSuccess(3);
+        stubRepositoryFinal(2, 0);
+        // maxPages=2 限制：第 3 轮 check 时 pageCount=2 >= 2，触发 pageLimitExceeded，break
+        RunExecutionContext ctx = new RunExecutionContext(System.currentTimeMillis(),
+                30 * 60 * 1000L, 2, 10_000, pageHandle);
+        newExecutor().execute(ctx, 11L);
+        verify(repository, atLeastOnce())
+                .markTerminal(eq(11L), eq(RunState.SUCCESS), eq(StopReason.PAGE_LIMIT));
+        // 应 appendBatch 2 次 result（每次 1 record）+ 1 次 terminal 事件
+        verify(resultSink, atLeastOnce()).appendBatch(eq(11L), any(), any());
+    }
+
     private ListRunExecutor newExecutor() {
         return new ListRunExecutor(repository, resultSink, preview, urlPolicy, hasher);
     }
