@@ -14,6 +14,7 @@ import com.visualspider.visualbrowser.internal.EditingBuffer;
 import com.visualspider.visualbrowser.internal.SelectorValidationService;
 import com.visualspider.visualbrowser.internal.TaskNotOpenableException;
 import com.visualspider.visualbrowser.internal.VisualSessionNotFoundException;
+import com.visualspider.visualbrowser.spi.SessionLifecycleState;
 import com.visualspider.visualbrowser.spi.VisualSession;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotNull;
@@ -32,10 +33,13 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
- * 可视会话 REST 边界（M2-1 #17 / M2-3 #19）。
+ * 可视会话 REST 边界（M2-1 #17 / M2-3 #19 / M4-6 #36 扩 preview-list）。
  *
  * <p>仅做参数接收与权限转交；所有权 / 状态 / 容量校验由 manager 负责。
  * CSRF 由 Spring Security 统一拦截。preview 不写库，仅在当前 lane/Page 上执行。
+ *
+ * <p>三类端点（{@code preview} / {@code infer} / {@code preview-list}）共享
+ * {@link #requireOpenOwned(String)} 前置检查：actor + 所有权 + 非 CLOSED。
  */
 @RestController
 @RequestMapping("/api/visual-sessions")
@@ -105,10 +109,7 @@ public class VisualSessionController {
     public ResponseEntity<Void> patchBuffer(@PathVariable @NotNull String sessionId,
                                             @RequestBody PreviewRequest request) {
         ActorId actor = identityAccess.currentActor();
-        VisualSession owned = manager.requireOwnedBy(sessionId, actor);
-        if (owned.lifecycle() == com.visualspider.visualbrowser.spi.SessionLifecycleState.CLOSED) {
-            throw new VisualSessionNotFoundException(sessionId);
-        }
+        VisualSession owned = requireOpenOwned(sessionId, actor);
         TaskDefinition definition = request.definition();
         if (definition == null) {
             throw new IllegalArgumentException("definition 不能为空");
@@ -121,14 +122,10 @@ public class VisualSessionController {
     public ValidateSelectorsResponse validateSelectors(@PathVariable @NotNull String sessionId,
                                                        @RequestBody ValidateSelectorsRequest request) {
         ActorId actor = identityAccess.currentActor();
-        // 校验所有权
-        VisualSession owned = manager.requireOwnedBy(sessionId, actor);
-        if (owned.lifecycle() == com.visualspider.visualbrowser.spi.SessionLifecycleState.CLOSED) {
-            throw new com.visualspider.visualbrowser.internal.VisualSessionNotFoundException(sessionId);
-        }
+        VisualSession owned = requireOpenOwned(sessionId, actor);
         // 在 session 绑定的 lane/Page 上校验（per-session PlaywrightControl），与 preview 同路径
         var legacy = manager.legacySession(sessionId)
-                .orElseThrow(() -> new com.visualspider.visualbrowser.internal.VisualSessionNotFoundException(sessionId));
+                .orElseThrow(() -> new VisualSessionNotFoundException(sessionId));
         List<ValidateSelectorsResponse.SelectorOutcome> outcomes = new ArrayList<>();
         for (ValidateSelectorsRequest.SelectorEntry entry : request.selectors()) {
             String type = entry.type() == null ? "css" : entry.type();
@@ -152,10 +149,7 @@ public class VisualSessionController {
     public PreviewResult preview(@PathVariable @NotNull String sessionId,
                                  @RequestBody PreviewRequest request) {
         ActorId actor = identityAccess.currentActor();
-        VisualSession owned = manager.requireOwnedBy(sessionId, actor);
-        if (owned.lifecycle() == com.visualspider.visualbrowser.spi.SessionLifecycleState.CLOSED) {
-            throw new VisualSessionNotFoundException(sessionId);
-        }
+        requireOpenOwned(sessionId, actor);
         TaskDefinition definition = request.definition();
         if (definition == null) {
             throw new IllegalArgumentException("definition 不能为空");
@@ -177,10 +171,7 @@ public class VisualSessionController {
     public InferResponse infer(@PathVariable @NotNull String sessionId,
                                @RequestBody @Valid InferRequest request) {
         ActorId actor = identityAccess.currentActor();
-        VisualSession owned = manager.requireOwnedBy(sessionId, actor);
-        if (owned.lifecycle() == com.visualspider.visualbrowser.spi.SessionLifecycleState.CLOSED) {
-            throw new VisualSessionNotFoundException(sessionId);
-        }
+        requireOpenOwned(sessionId, actor);
         int[] r = ViewportMapper.toRemote(request.x(), request.y(),
                 request.clientWidth(), request.clientHeight());
         if (r == null) {
@@ -194,6 +185,40 @@ public class VisualSessionController {
         com.visualspider.extraction.spi.DomSnapshot snap = legacy.captureDomSnapshot(r[0], r[1]);
         InferredCandidateListItem result = inferrer.infer(snap);
         return InferResponse.from(result);
+    }
+
+    /**
+     * 列表模式受限预览（M4-6 #36 / spec §D9 / §D11）：
+     * 在当前 Page 上对 {@code TaskDefinition} 的 {@code listItemRule} 取最多 20 条
+     * preview，逐项 scope 到子树内提取字段。
+     *
+     * <p>与 {@link #preview} 共享 lane 线程模型；不写库。maxItems 写死 20（spec §D9 上限），
+     * 重复请求由 {@code ExtractionPreviewImpl} 内部 cap 兜底。响应薄包装为
+     * {@link ListPreviewResponse}（与 {@link InferResponse} 同模式）。
+     */
+    @PostMapping("/{sessionId}/preview-list")
+    public ListPreviewResponse previewList(@PathVariable @NotNull String sessionId,
+                                           @RequestBody PreviewRequest request) {
+        ActorId actor = identityAccess.currentActor();
+        requireOpenOwned(sessionId, actor);
+        TaskDefinition definition = request.definition();
+        if (definition == null) {
+            throw new IllegalArgumentException("definition 不能为空");
+        }
+        var legacy = manager.legacySession(sessionId)
+                .orElseThrow(() -> new VisualSessionNotFoundException(sessionId));
+        return ListPreviewResponse.from(legacy.previewList(definition, extractionPreview, 20));
+    }
+
+    /**
+     * 三类端点共用前置：actor + 所有权 + 非 CLOSED。CLOSED 视作已 not-found（与既有行为一致）。
+     */
+    private VisualSession requireOpenOwned(String sessionId, ActorId actor) {
+        VisualSession owned = manager.requireOwnedBy(sessionId, actor);
+        if (owned.lifecycle() == SessionLifecycleState.CLOSED) {
+            throw new VisualSessionNotFoundException(sessionId);
+        }
+        return owned;
     }
 
     public record OpenRequest(@Positive long taskId) {}

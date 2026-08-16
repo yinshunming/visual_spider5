@@ -87,7 +87,7 @@ function makeDetail(): RunDetail {
       schemaVersion: 1,
       taskVersion: 1,
       definition: {
-        schemaVersion: 1,
+        schemaVersion: 2,
         mode: 'SINGLE_PAGE',
         startUrl: 'http://example.com',
         viewport: { width: 1280, height: 720 },

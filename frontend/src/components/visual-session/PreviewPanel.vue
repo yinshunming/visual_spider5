@@ -1,9 +1,17 @@
 <script setup lang="ts">
+/**
+ * 预览面板（M2-5 #21 单页预览；M4-6 #36 扩列表预览）。
+ *
+ * <p>单页（{@code mode === 'SINGLE_PAGE'}）：调 {@code visualSessionApi.preview} 拿字段 outcome。
+ * <br>列表（{@code mode === 'LIST'}）：挂 {@link ListPreviewPanel} 走 {@code previewList}。
+ */
 import { ref } from 'vue'
 import { visualSessionApi } from '../../api/visualSession'
-import type { PreviewResult } from '../../contracts/visualSession'
+import ListPreviewPanel from './ListPreviewPanel.vue'
+import type { PreviewResult, TaskDefinition, TaskMode } from '../../contracts/visualSession'
 
-const props = defineProps<{ sessionId: string }>()
+const props = defineProps<{ sessionId: string; definition: TaskDefinition; mode: TaskMode }>()
+
 const result = ref<PreviewResult | null>(null)
 const loading = ref(false)
 
@@ -13,24 +21,7 @@ async function runPreview(): Promise<void> {
   }
   loading.value = true
   try {
-    result.value = await visualSessionApi.preview(props.sessionId, {
-      schemaVersion: 1,
-      mode: 'SINGLE_PAGE',
-      startUrl: 'http://example.com/',
-      viewport: { width: 1280, height: 720 },
-      fields: [
-        {
-          name: 'title',
-          source: 'VISIBLE_TEXT',
-          selector: 'h1',
-          attributeName: undefined,
-          resultType: 'TEXT',
-          trim: 'TRIM',
-          regex: undefined,
-          required: true,
-        },
-      ],
-    })
+    result.value = await visualSessionApi.preview(props.sessionId, props.definition)
   } finally {
     loading.value = false
   }
@@ -38,9 +29,14 @@ async function runPreview(): Promise<void> {
 </script>
 
 <template>
-  <section class="preview">
+  <ListPreviewPanel
+    v-if="mode === 'LIST'"
+    :session-id="sessionId"
+    :definition="definition"
+  />
+  <section v-else class="preview">
     <h3>预览</h3>
-    <button :disabled="loading || !props.sessionId" @click="runPreview">
+    <button :disabled="loading || !sessionId" @click="runPreview">
       {{ loading ? '运行中…' : '运行预览' }}
     </button>
     <ul v-if="result">

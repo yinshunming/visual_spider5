@@ -12,6 +12,7 @@
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import ProgressPanel from '../components/run/ProgressPanel.vue'
+import RunCounters from '../components/run/RunCounters.vue'
 import SnapshotViewer from '../components/run/SnapshotViewer.vue'
 import ResultsTable from '../components/run/ResultsTable.vue'
 import EventStream from '../components/run/EventStream.vue'
@@ -162,6 +163,14 @@ onBeforeUnmount(() => {
       :fallback="ws.fallback.value"
       :cancel-disabled="ws.terminal.value !== null"
       @cancel="cancelRun"
+    />
+    <RunCounters
+      v-if="detail?.mode === 'LIST'"
+      :raw="detail.recordCountRaw"
+      :dedup="detail.recordCountDedup"
+      :final="detail.recordCountFinal"
+      :fail="detail.failCount"
+      mode="LIST"
     />
     <SnapshotViewer
       :snapshot="snapshot"

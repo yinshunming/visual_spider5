@@ -1,17 +1,35 @@
 <script setup lang="ts">
 /**
- * M2-5 #21：VisualSessionView 主页面。
+ * VisualSessionView 主页面。
  *
  * - 通过 REST 打开/关闭会话（visualSessionApi）；
  * - 通过 WebSocket 收发二进制帧 + JSON 状态；
  * - 浏览器原生 WebSocket 不支持自定义 header，CSRF 用 query `?csrf=<token>`；
- * - 选择/浏览模式由 mode command 切换。
+ * - 选择/浏览模式由 mode command 切换；
+ * - M4-6 #36：fetch task draft 拿 mode + definition；LIST 模式挂 ListInferPanel；
+ *   透传 mode 给 FieldEditorPanel / PreviewPanel。
  */
 import { ref, onMounted, onBeforeUnmount, computed } from 'vue'
 import { visualSessionApi } from '../api/visualSession'
-import { http, ApiError } from '../http'
+import { tasksApi } from '../api/tasks'
+import { ApiError } from '../http'
 import { WS_SCHEMA_VERSION, frame, isValidFrame } from '../contracts/wsProtocol'
-import type { LifecycleState } from '../contracts/visualSession'
+import RemoteBrowserFrame from '../components/visual-session/RemoteBrowserFrame.vue'
+import AddressBar from '../components/visual-session/AddressBar.vue'
+import ModeSwitcher from '../components/visual-session/ModeSwitcher.vue'
+import LifecycleBadge from '../components/visual-session/LifecycleBadge.vue'
+import FieldEditorPanel from '../components/visual-session/FieldEditorPanel.vue'
+import SelectorLiveFeedback from '../components/visual-session/SelectorLiveFeedback.vue'
+import PreviewPanel from '../components/visual-session/PreviewPanel.vue'
+import ListInferPanel from '../components/visual-session/ListInferPanel.vue'
+import type {
+  LifecycleState,
+  ReadinessError,
+  SelectorType,
+  TaskDefinition,
+  TaskMode,
+} from '../contracts/visualSession'
+import type { TaskDraft } from '../contracts/task'
 
 const props = defineProps<{ taskId: number }>()
 
@@ -20,6 +38,15 @@ const lifecycle = ref<LifecycleState>('CLOSED')
 const lastFrameUrl = ref<string | null>(null)
 const errorMessage = ref<string>('')
 const mode = ref<'BROWSE' | 'SELECT'>('BROWSE')
+
+// M4-6 #36：任务模式 + 定义
+const taskDraft = ref<TaskDraft | null>(null)
+const taskMode = computed<TaskMode>(() => taskDraft.value?.mode ?? 'SINGLE_PAGE')
+const taskDefinition = computed<TaskDefinition | null>(
+  () => taskDraft.value?.definition ?? null,
+)
+// M4-6 #36：保存草稿后端返回的 READY 校验错误（含 MULTIPLE_MATCH / LIST_ITEM_RULE_NO_MATCH 等）。
+const readinessErrors = ref<ReadinessError[]>([])
 
 let socket: WebSocket | null = null
 
@@ -31,6 +58,17 @@ async function openSession(): Promise<void> {
     await connectSocket(session.sessionId)
   } catch (e) {
     errorMessage.value = formatError(e)
+  }
+}
+
+async function loadTaskDraft(): Promise<void> {
+  try {
+    taskDraft.value = await tasksApi.get(props.taskId)
+  } catch (e) {
+    // 任务不可读不阻塞会话：UI 走单页默认渲染
+    if (e instanceof ApiError) {
+      errorMessage.value = `${e.status} ${e.message}`
+    }
   }
 }
 
@@ -140,14 +178,36 @@ function formatError(e: unknown): string {
 
 const showLifecycle = computed(() => lifecycle.value)
 
-onMounted(openSession)
+// M4-6 #36：listItemRule 推断后回流到本地 draft；FieldEditorPanel 通过 definition prop 拿最新值。
+function onListItemRuleUpdate(rule: { selector: string; selectorType?: SelectorType }): void {
+  if (taskDraft.value === null) {
+    return
+  }
+  taskDraft.value = {
+    ...taskDraft.value,
+    definition: {
+      ...taskDraft.value.definition,
+      listItemRule: { selector: rule.selector, selectorType: rule.selectorType },
+    },
+  }
+}
+
+// M4-6 #36：FieldEditorPanel.save 失败 → 接收 readiness 错误并显示在 ListRuleEditor。
+function onFieldEditorError(errors: ReadinessError[]): void {
+  readinessErrors.value = errors
+}
+
+onMounted(async () => {
+  await loadTaskDraft()
+  await openSession()
+})
 onBeforeUnmount(closeSession)
 </script>
 
 <template>
   <div class="vs-view">
     <header class="vs-header">
-      <h2>配置会话 · taskId {{ props.taskId }}</h2>
+      <h2>配置会话 · taskId {{ props.taskId }}（{{ taskMode }}）</h2>
       <LifecycleBadge :lifecycle="lifecycle" />
       <button @click="heartbeat">心跳</button>
       <button @click="closeSession">关闭</button>
@@ -158,9 +218,22 @@ onBeforeUnmount(closeSession)
       <aside class="vs-aside">
         <AddressBar :url="lastFrameUrl" />
         <ModeSwitcher :mode="mode" @switch="switchMode" />
-        <FieldEditorPanel :task-id="props.taskId" />
-        <SelectorLiveFeedback :session-id="sessionId" />
-        <PreviewPanel :session-id="sessionId" />
+        <template v-if="taskDefinition">
+          <FieldEditorPanel
+            :session-id="sessionId"
+            :definition="taskDefinition"
+            :readiness-errors="readinessErrors"
+            @error="onFieldEditorError"
+          />
+          <ListInferPanel
+            v-if="taskMode === 'LIST' && sessionId"
+            :session-id="sessionId"
+            :definition="taskDefinition"
+            @update:list-item-rule="onListItemRuleUpdate"
+          />
+          <SelectorLiveFeedback :session-id="sessionId" />
+          <PreviewPanel :session-id="sessionId" :definition="taskDefinition" :mode="taskMode" />
+        </template>
       </aside>
     </main>
     <footer class="vs-footer">
