@@ -95,8 +95,16 @@ public class TaskCatalogImpl implements TaskCatalog {
             throw new StaleTaskVersionException(taskId, expectedVersion, now.version());
         }
         TaskDraft updated2 = repository.findById(taskId).orElseThrow(() -> new TaskNotFoundException(taskId));
-        LOG.info("saveDraft: id={} newVersion={}", taskId, updated2.version());
-        return updated2;
+        // 校验通过 → 状态推进 DRAFT → READY（spec §D2 / §D10）。
+        // M4-7 (#37) 发现：之前只有校验从未写 status=READY，task 永远卡 DRAFT，RunCoordinator 拒起 run。
+        boolean markedReady = repository.markReady(taskId, updated2.version());
+        if (!markedReady) {
+            TaskDraft now = repository.findById(taskId).orElseThrow(() -> new TaskNotFoundException(taskId));
+            throw new StaleTaskVersionException(taskId, updated2.version(), now.version());
+        }
+        TaskDraft ready = repository.findById(taskId).orElseThrow(() -> new TaskNotFoundException(taskId));
+        LOG.info("saveDraft: id={} newVersion={} status={}", taskId, ready.version(), ready.status());
+        return ready;
     }
 
     @Override

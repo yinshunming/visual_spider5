@@ -141,6 +141,16 @@ public class JdbcTaskRepository implements TaskRepository {
     }
 
     @Override
+    public boolean markReady(long id, long expectedVersion) {
+        // 仅在 DRAFT 状态下推进（避免覆盖后续 RUNNING/ARCHIVED 等终态）；CAS 校验 version。
+        int rows = jdbc.update(
+                "UPDATE collection_task SET status = 'READY', version = version + 1, updated_at = now() "
+                        + "WHERE id = ? AND version = ? AND status = 'DRAFT'",
+                id, expectedVersion);
+        return rows == 1;
+    }
+
+    @Override
     public boolean deleteById(long id, long expectedOwnerId) {
         int rows = jdbc.update(
                 "DELETE FROM collection_task WHERE id = ? AND owner_id = ?",

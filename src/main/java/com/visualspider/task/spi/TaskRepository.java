@@ -30,6 +30,14 @@ public interface TaskRepository {
      */
     boolean updateDraft(long id, TaskDefinition definition, long expectedVersion);
 
+    /**
+     * 把任务从 DRAFT 推进到 READY（CAS 校验 version）；同步 bump version。
+     * <p>任务通过 {@code TaskReadiness.validate}（含 M4 live hook）后由
+     * {@link TaskCatalog#saveDraft} 调用，把状态写入 DB。
+     * <p>失败（version 不匹配 / 行不存在）抛 {@code false}，由 catalog 走 StaleTaskVersion 路径。
+     */
+    boolean markReady(long id, long expectedVersion);
+
     /** 删除：WHERE id=? AND owner_id=?（admin 单独路径）。 */
     boolean deleteById(long id, long expectedOwnerId);
 }

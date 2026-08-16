@@ -129,16 +129,19 @@ class TaskCatalogImplTest {
     }
 
     @Test
-    @DisplayName("saveDraft 版本匹配 → updateDraft 成功")
+    @DisplayName("saveDraft 版本匹配 → updateDraft + markReady 成功")
     void saveDraft_success() {
         TaskDraft existing = newTaskDraft(1L, 2L, 0L);
         TaskDraft updated = newTaskDraft(1L, 2L, 1L);
-        when(repository.findById(1L)).thenReturn(Optional.of(existing), Optional.of(updated));
+        TaskDraft ready = newTaskDraft(1L, 2L, 2L);
+        when(repository.findById(1L)).thenReturn(Optional.of(existing), Optional.of(updated), Optional.of(ready));
         when(identityAccess.canAccessTask(2L, new ActorId(2L))).thenReturn(true);
         when(repository.updateDraft(eq(1L), any(), eq(0L))).thenReturn(true);
+        when(repository.markReady(eq(1L), eq(1L))).thenReturn(true);
 
         TaskDraft result = catalog.saveDraft(1L, singlePage(), 0L, new ActorId(2L));
-        assertThat(result.version()).isEqualTo(1L);
+        // markReady 再 bump 一次 → 0 → 1 → 2
+        assertThat(result.version()).isEqualTo(2L);
     }
 
     @Test

@@ -79,4 +79,24 @@ PostgreSQL 是唯一外部基础设施。
 
 无 PG 时 `-Ppg-it` 跳过 `*IT` 并日志说明，**不**静默成功。
 
+### 验证 M4 主链路
+
+```bash
+# 1) 跑 list 集成测试（真 PG + 真 Chromium + 5 fixture 一对一）
+./mvnw verify -Ppg-it -Dpg.it.url=jdbc:postgresql://localhost:5432/visualspider_it \
+  -Dpg.it.username=visualspider -Dpg.it.password=visualspider \
+  -Dtest='ListRunIT,ListDedupeIT,ListPartialFailIT,ListCandidiateInferenceIT,ListPreviewIT,RunExportIT'
+
+# 2) E2E smoke（真 JAR + PG + Chromium，10 步）：
+#    标准列表 / dedup / PARTIAL_SUCCESS / cancel + lane / 0 残留
+pwsh scripts/e2e/m4-smoke.ps1
+```
+
+5 形态 fixture 在 `src/test/resources/list/`：standard-list / card-grid / nested-list /
+with-duplicates / partial-fail（最后一个含一个 U+0000 不可入库字段值 + 一个 setTimeout 延迟渲染，
+触发真实 sink 行级失败 → `PARTIAL_SUCCESS + fail=1`）。
+
+`m4-smoke.sh` 是 Linux/macOS 镜像占位，**不在本机执行**（同 M3 .sh 先例）；真实跨平台验收
+延后到 M7（roadmap §7）。
+
 `mvn package` 产出可执行 JAR，含 `static/index.html` + `Application.class` + `db/migration/V1__baseline.sql`。
