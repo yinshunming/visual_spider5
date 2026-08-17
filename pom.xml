@@ -21,6 +21,10 @@
         <java.version>21</java.version>
         <playwright.version>1.61.0</playwright.version>
         <flyway.version>10.20.1</flyway.version>
+        <!-- pg-it 默认 schema；未定义时 systemPropertyVariables 会传空串，
+             Spring 的 ${pg.it.schemas:public} 默认值对"存在但为空"不生效，
+             Flyway 报 Unable to create schema ""（M4 收口时定位，非偶发） -->
+        <pg.it.schemas>public</pg.it.schemas>
     </properties>
 
     <dependencies>
