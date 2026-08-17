@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>M0 Fixture 静态页</title>
+    <style>
+        body { font-family: sans-serif; margin: 24px; }
+        #tall { height: 2000px; margin-top: 24px; background: linear-gradient(crimson, navy); color: white; padding: 16px; }
+    </style>
+</head>
+<body>
+    <h1 id="title">M0 远程浏览器 fixture</h1>
+    <p>用于验证导航、点击、中文输入、滚动与整页截图。</p>
+    <input id="input" type="text" placeholder="输入中文">
+    <button id="submit-btn">提交</button>
+    <div id="output"></div>
+    <div id="tall">滚动区域：向下滚动应改变 scrollTop。</div>
+    <script>
+        document.getElementById('submit-btn').addEventListener('click', function () {
+            document.getElementById('output').textContent = '已输入：' + document.getElementById('input').value;
+        });
+    </script>
+</body>
+</html>

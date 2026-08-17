@@ -1,0 +1,222 @@
+package com.visualspider.run;
+
+import static org.assertj.core.api.Assertions.assertThat;
+
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.visualspider.run.internal.RunDispatcher;
+import com.visualspider.task.domain.FieldDefinition;
+import com.visualspider.task.domain.FieldSource;
+import com.visualspider.task.domain.Limits;
+import com.visualspider.task.domain.ListItemRule;
+import com.visualspider.task.domain.ResultType;
+import com.visualspider.task.domain.SelectorType;
+import com.visualspider.task.domain.TaskDefinition;
+import com.visualspider.task.domain.TaskMode;
+import com.visualspider.task.domain.TaskSnapshot;
+import com.visualspider.task.domain.TrimPolicy;
+import com.visualspider.task.domain.UniqueKeyField;
+import com.visualspider.task.domain.Viewport;
+import com.visualspider.task.domain.WaitPolicy;
+import java.net.InetSocketAddress;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.time.Duration;
+import java.util.List;
+import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.test.annotation.DirtiesContext;
+import org.springframework.test.context.ActiveProfiles;
+
+/**
+ * List 模式 partial-fail 真 lane IT（issue #37 / spec §T5 partial-fail.html）。
+ *
+ * <p>真 Playwright + 真 PG，经 dispatcher 路由，覆盖 PARTIAL_SUCCESS 的 E2E 触发：
+ * fixture 内 1 个 item 的 {@code .date} 含 U+0000（不可入库字段值），PG jsonb 确定性拒绝
+ * U+0000 转义（SQLState class 22，非唯一约束冲突）-> 走真实 sink 行级失败路径
+ * {@code fail_count++}。另 1 个 item 的 {@code .date} 由 setTimeout 8s 后延迟渲染，验证
+ * 延迟 item 字段缺失只跳过该字段、不破坏主链路。
+ *
+ * <p>与 {@link ListRunPartialFailIT}（真 PG + 假 lane + delegating sink 模拟行级失败）互补：
+ * 本 IT 证明同一终态可以在真实 Chromium + 真实 DB 上经 fixture 数据触发（M4-7 smoke step 7 同路径）。
+ *
+ * <p>依赖 {@code -Ppg-it -Dpg.it.url=jdbc:postgresql://localhost:5432/visualspider_it
+ * -Dpg.it.username=visualspider -Dpg.it.password=visualspider}。
+ */
+@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
+        properties = {"run.dispatcher.enabled=true"})
+@ActiveProfiles("it")
+@DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_CLASS)
+class ListPartialFailIT {
+
+    @Autowired
+    private JdbcTemplate jdbc;
+
+    @Autowired
+    private ObjectMapper objectMapper;
+
+    @Autowired
+    private RunDispatcher dispatcher;
+
+    private static com.sun.net.httpserver.HttpServer fixtureServer;
+    private static int fixturePort;
+
+    private long userId;
+    private long taskId;
+    private long runId;
+
+    @BeforeAll
+    static void startFixtureServer() throws Exception {
+        Path listDir = Paths.get(ListPartialFailIT.class.getResource("/list/partial-fail.html").toURI()).getParent();
+        fixtureServer = com.sun.net.httpserver.HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        fixtureServer.createContext("/", exchange -> {
+            String path = exchange.getRequestURI().getPath();
+            if (path.startsWith("/")) {
+                path = path.substring(1);
+            }
+            Path file = listDir.resolve(path).normalize();
+            if (!file.startsWith(listDir) || !Files.isReadable(file)) {
+                exchange.sendResponseHeaders(404, -1);
+                exchange.close();
+                return;
+            }
+            byte[] body = Files.readAllBytes(file);
+            exchange.getResponseHeaders().set("Content-Type", "text/html; charset=utf-8");
+            exchange.sendResponseHeaders(200, body.length);
+            try (var os = exchange.getResponseBody()) {
+                os.write(body);
+            }
+            exchange.close();
+        });
+        fixtureServer.start();
+        fixturePort = fixtureServer.getAddress().getPort();
+    }
+
+    @AfterAll
+    static void stopFixtureServer() {
+        if (fixtureServer != null) {
+            fixtureServer.stop(0);
+        }
+    }
+
+    @BeforeEach
+    void setUp() throws Exception {
+        jdbc.update("DELETE FROM run_result");
+        jdbc.update("DELETE FROM run_event");
+        jdbc.update("DELETE FROM collection_run");
+        jdbc.update("DELETE FROM collection_task");
+        jdbc.update("DELETE FROM app_user WHERE username LIKE 'it-%'");
+
+        userId = jdbc.queryForObject(
+                "INSERT INTO app_user (username, password_hash, role, status) "
+                        + "VALUES (?, ?, 'COLLECTOR', 'ACTIVE') RETURNING id",
+                Long.class, "it-pfail2", "{noop}pfail2-pwd-12chars");
+
+        TaskDefinition def = listDefinition();
+        taskId = jdbc.queryForObject(
+                "INSERT INTO collection_task (owner_id, name, mode, status, schema_version, definition) "
+                        + "VALUES (?, 'it-pfail2-task', 'LIST', 'READY', 2, ?::jsonb) RETURNING id",
+                Long.class, userId, objectMapper.writeValueAsString(def));
+
+        TaskSnapshot snapshot = new TaskSnapshot(taskId, userId, "it-pfail2-task",
+                new TaskMode.List(), 2, 1L, def);
+        runId = jdbc.queryForObject(
+                "INSERT INTO collection_run (task_id, owner_id, snapshot, status) "
+                        + "VALUES (?, ?, ?::jsonb, 'WAITING') RETURNING id",
+                Long.class, taskId, userId, objectMapper.writeValueAsString(snapshot));
+    }
+
+    @AfterEach
+    void tearDown() {
+        jdbc.update("DELETE FROM run_result");
+        jdbc.update("DELETE FROM run_event");
+        jdbc.update("DELETE FROM collection_run");
+        jdbc.update("DELETE FROM collection_task");
+        jdbc.update("DELETE FROM app_user WHERE username LIKE 'it-%'");
+    }
+
+    @Test
+    @DisplayName("partial-fail：5 item 中 1 行值不可入库 -> raw=5/final=4/fail=1 + PARTIAL_SUCCESS")
+    void partialFailRealLane() throws Exception {
+        dispatcher.dispatchOnceForTest();
+
+        String status = pollTerminal(runId, Duration.ofSeconds(40));
+        if (!"PARTIAL_SUCCESS".equals(status)) {
+            throw new AssertionError("run 未达 PARTIAL_SUCCESS，终态=" + status + "，事件:\n"
+                    + dumpEvents(runId));
+        }
+        assertThat(jdbc.queryForObject(
+                "SELECT stop_reason FROM collection_run WHERE id = ?", String.class, runId))
+                .isEqualTo("COMPLETED");
+
+        var counts = jdbc.queryForMap(
+                "SELECT record_count_raw, record_count_dedup, record_count_final, fail_count "
+                        + "FROM collection_run WHERE id = ?",
+                runId);
+        assertThat(counts.get("record_count_raw")).isEqualTo(5);
+        assertThat(counts.get("record_count_dedup")).isEqualTo(0);
+        assertThat(counts.get("record_count_final")).isEqualTo(4);
+        assertThat(counts.get("fail_count")).isEqualTo(1);
+
+        // 延迟渲染的 Delta 字段缺失只跳过 date，行仍写入；不可入库的 Epsilon 不落 run_result
+        List<String> titles = jdbc.queryForList(
+                "SELECT data->>'title' FROM run_result WHERE run_id = ? ORDER BY sequence_no ASC",
+                String.class, runId);
+        assertThat(titles).containsExactly("Alpha", "Beta", "Gamma", "Delta");
+        List<String> deltaDates = jdbc.queryForList(
+                "SELECT data->>'date' FROM run_result WHERE run_id = ? AND data->>'title' = 'Delta'",
+                String.class, runId);
+        assertThat(deltaDates).containsExactly((String) null);
+
+        // 行级失败有 WARN/LIST_ITEM_FAILED 事件可观察
+        Long failedEvents = jdbc.queryForObject(
+                "SELECT count(*) FROM run_event WHERE run_id = ? AND stage = 'LIST_ITEM_FAILED'",
+                Long.class, runId);
+        assertThat(failedEvents).isEqualTo(1L);
+    }
+
+    private String dumpEvents(long runId) {
+        List<String> events = jdbc.queryForList(
+                "SELECT level || '/' || stage || ': ' || message FROM run_event "
+                        + "WHERE run_id = ? ORDER BY id",
+                String.class, runId);
+        return String.join("\n", events);
+    }
+
+    private String pollTerminal(long runId, Duration timeout) throws InterruptedException {
+        long deadline = System.currentTimeMillis() + timeout.toMillis();
+        while (System.currentTimeMillis() < deadline) {
+            String s = jdbc.queryForObject("SELECT status FROM collection_run WHERE id = ?",
+                    String.class, runId);
+            if (s != null && !s.equals("WAITING") && !s.equals("RUNNING")) {
+                return s;
+            }
+            Thread.sleep(200);
+        }
+        throw new AssertionError("run " + runId + " 未在 " + timeout + " 内达终态");
+    }
+
+    private TaskDefinition listDefinition() {
+        FieldDefinition title = new FieldDefinition("title", FieldSource.VISIBLE_TEXT,
+                ".title", null, SelectorType.CSS, ResultType.TEXT, TrimPolicy.TRIM, null, true);
+        FieldDefinition date = new FieldDefinition("date", FieldSource.VISIBLE_TEXT,
+                ".date", null, SelectorType.CSS, ResultType.TEXT, TrimPolicy.TRIM, null, false);
+        return new TaskDefinition(
+                2,
+                new TaskMode.List(),
+                "http://localhost:" + fixturePort + "/partial-fail.html",
+                Viewport.DEFAULT,
+                new WaitPolicy(0),
+                new Limits(200, 10_000, Duration.ofMinutes(30)),
+                new ListItemRule("tbody > tr", SelectorType.CSS),
+                List.of(new UniqueKeyField("title")),
+                List.of(title, date));
+    }
+}

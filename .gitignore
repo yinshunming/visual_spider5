@@ -1,0 +1,28 @@
+# Maven
+target/
+!.mvn/wrapper/maven-wrapper.jar
+
+# IDE
+.idea/
+*.iml
+.vscode/
+.settings/
+.project
+.classpath
+
+# Logs
+*.log
+logs/
+
+# 前端（M0-2 起使用）
+node_modules/
+dist/
+frontend/node/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Agent 内部状态（sandbox 与 worktree 数据，不入版本库）
+.scratch/
+.claude/

@@ -1,0 +1,17 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <title>M0 Fixture 动态页</title>
+  </head>
+  <body>
+    <h1 id="counter">0</h1>
+    <p>动态页：每 100ms 更新计数器，用于触发 screencast 持续推帧。</p>
+    <script>
+      let i = 0;
+      setInterval(() => {
+        document.getElementById('counter').textContent = ++i;
+      }, 100);
+    </script>
+  </body>
+</html>

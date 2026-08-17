@@ -1,0 +1,227 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-starter-parent</artifactId>
+        <version>3.4.13</version>
+        <relativePath/>
+    </parent>
+
+    <groupId>com.visualspider</groupId>
+    <artifactId>visual-spider5</artifactId>
+    <version>0.0.1-SNAPSHOT</version>
+    <name>visual-spider5</name>
+    <description>可视化网页采集 - 私有部署首版</description>
+
+    <properties>
+        <java.version>21</java.version>
+        <playwright.version>1.61.0</playwright.version>
+        <flyway.version>10.20.1</flyway.version>
+        <!-- pg-it 默认 schema；未定义时 systemPropertyVariables 会传空串，
+             Spring 的 ${pg.it.schemas:public} 默认值对"存在但为空"不生效，
+             Flyway 报 Unable to create schema ""（M4 收口时定位，非偶发） -->
+        <pg.it.schemas>public</pg.it.schemas>
+    </properties>
+
+    <dependencies>
+        <!-- M0 只需 Spring Boot 进程宿主；M1 起增加 Web/Security/JDBC/Flyway/Actuator -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter</artifactId>
+        </dependency>
+
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-web</artifactId>
+        </dependency>
+
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-websocket</artifactId>
+        </dependency>
+
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-security</artifactId>
+        </dependency>
+
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-jdbc</artifactId>
+        </dependency>
+
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-validation</artifactId>
+        </dependency>
+
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-actuator</artifactId>
+        </dependency>
+
+        <dependency>
+            <groupId>org.flywaydb</groupId>
+            <artifactId>flyway-core</artifactId>
+        </dependency>
+
+        <dependency>
+            <groupId>org.flywaydb</groupId>
+            <artifactId>flyway-database-postgresql</artifactId>
+        </dependency>
+
+        <dependency>
+            <groupId>org.postgresql</groupId>
+            <artifactId>postgresql</artifactId>
+        </dependency>
+
+        <dependency>
+            <groupId>com.microsoft.playwright</groupId>
+            <artifactId>playwright</artifactId>
+            <version>${playwright.version}</version>
+        </dependency>
+
+        <!-- M2-2 #18: 选择器 CSS 语法校验（仅解析） -->
+        <dependency>
+            <groupId>org.jsoup</groupId>
+            <artifactId>jsoup</artifactId>
+            <version>1.17.2</version>
+        </dependency>
+
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+
+        <dependency>
+            <groupId>org.springframework.security</groupId>
+            <artifactId>spring-security-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.springframework.boot</groupId>
+                <artifactId>spring-boot-maven-plugin</artifactId>
+            </plugin>
+
+            <!-- 单元测试：只跑 *Test.java（不跑 *IT.java）；*IT 由 failsafe 接管 -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <configuration>
+                    <excludes>
+                        <exclude>**/*IT.java</exclude>
+                        <exclude>**/*ITCase.java</exclude>
+                    </excludes>
+                </configuration>
+            </plugin>
+
+            <!-- 集成测试：*IT.java；mvn verify 才执行；mvn test 只跑单元测试 -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-failsafe-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <goals>
+                            <goal>integration-test</goal>
+                            <goal>verify</goal>
+                        </goals>
+                    </execution>
+                </executions>
+                <configuration>
+                    <skipITs>${skipITs}</skipITs>
+                </configuration>
+            </plugin>
+
+            <!-- 提供 mvn exec:java -Dexec.args="install chromium" 安装浏览器二进制 -->
+            <plugin>
+                <groupId>org.codehaus.mojo</groupId>
+                <artifactId>exec-maven-plugin</artifactId>
+                <version>3.5.0</version>
+                <configuration>
+                    <mainClass>com.microsoft.playwright.CLI</mainClass>
+                </configuration>
+            </plugin>
+
+            <!-- 前端构建：generate-resources 阶段跑 npm install + build，产物写入 target/classes/static 随 JAR 打包 -->
+            <plugin>
+                <groupId>com.github.eirslett</groupId>
+                <artifactId>frontend-maven-plugin</artifactId>
+                <version>1.15.1</version>
+                <configuration>
+                    <workingDirectory>frontend</workingDirectory>
+                    <installDirectory>frontend</installDirectory>
+                    <nodeVersion>v22.14.0</nodeVersion>
+                    <nodeDownloadRoot>https://npmmirror.com/mirrors/node/</nodeDownloadRoot>
+                </configuration>
+                <executions>
+                    <execution>
+                        <id>install-node-and-npm</id>
+                        <goals>
+                            <goal>install-node-and-npm</goal>
+                        </goals>
+                        <phase>generate-resources</phase>
+                    </execution>
+                    <execution>
+                        <id>npm-install</id>
+                        <goals>
+                            <goal>npm</goal>
+                        </goals>
+                        <phase>generate-resources</phase>
+                        <configuration>
+                            <arguments>install</arguments>
+                        </configuration>
+                    </execution>
+                    <execution>
+                        <id>npm-build</id>
+                        <goals>
+                            <goal>npm</goal>
+                        </goals>
+                        <phase>generate-resources</phase>
+                        <configuration>
+                            <arguments>run build</arguments>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+        </plugins>
+    </build>
+
+    <profiles>
+        <!--
+          pg-it：仅在显式启用时才执行 *IT；PG DSN 通过 -Dpg.it.url / -Dpg.it.username / -Dpg.it.password 或同名环境变量提供。
+          未提供 DSN 时 failsafe 跳过并日志说明，不静默成功（架构 §9.2）。
+        -->
+        <profile>
+            <id>pg-it</id>
+            <properties>
+                <skipITs>false</skipITs>
+            </properties>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-failsafe-plugin</artifactId>
+                        <configuration>
+                            <skipITs>${skipITs}</skipITs>
+                            <systemPropertyVariables>
+                                <pg.it.url>${pg.it.url}</pg.it.url>
+                                <pg.it.username>${pg.it.username}</pg.it.username>
+                                <pg.it.password>${pg.it.password}</pg.it.password>
+                                <pg.it.schemas>${pg.it.schemas}</pg.it.schemas>
+                            </systemPropertyVariables>
+                        </configuration>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+    </profiles>
+</project>

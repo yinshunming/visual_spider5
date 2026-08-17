@@ -1,0 +1,416 @@
+package com.visualspider.result.internal;
+
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.visualspider.identity.domain.ActorId;
+import com.visualspider.identity.spi.IdentityAccess;
+import com.visualspider.result.spi.BatchOutcome;
+import com.visualspider.result.spi.Page;
+import com.visualspider.result.spi.ResultRecord;
+import com.visualspider.result.spi.RunAccessDeniedException;
+import com.visualspider.result.spi.RunEvent;
+import com.visualspider.result.spi.RunEventInput;
+import com.visualspider.result.spi.RunEventLevel;
+import com.visualspider.result.spi.RunEventQuery;
+import com.visualspider.result.spi.RunResultQuery;
+import com.visualspider.result.spi.RunResultSink;
+import com.visualspider.result.spi.RunStats;
+import java.sql.PreparedStatement;
+import java.sql.SQLException;
+import java.sql.Timestamp;
+import java.time.Instant;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import org.postgresql.util.PGobject;
+import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.dao.EmptyResultDataAccessException;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.core.RowMapper;
+import org.springframework.stereotype.Repository;
+
+/**
+ * {@link RunResultSink} / {@link RunResultQuery} 的 JDBC 实现（spec §D12 / D13）。
+ *
+ * <p>负责：
+ * <ul>
+ *   <li>结果行 / 事件的批量写入（{@code run_result} + {@code run_event}）</li>
+ *   <li>keyset 分页与汇总统计</li>
+ *   <li>导出阶段的所有权校验、快照字段名读取、流式批量拉取</li>
+ * </ul>
+ *
+ * <p>不引入新依赖；JSONB 用 PostgreSQL 驱动自带的 {@link PGobject}，反序列化复用
+ * 注入的 {@link ObjectMapper}。流式导出辅助方法（{@link #fieldNames(long, ActorId)} 与
+ * {@link #nextBatch(long, int, int)}）为 {@code internal} 包级私有，由 {@link CsvResultWriter} /
+ * {@link JsonResultWriter} 间接调用。
+ */
+@Repository
+public class JdbcRunResultRepository implements RunResultSink, RunResultQuery, RunEventQuery {
+
+    private final JdbcTemplate jdbc;
+    private final ObjectMapper objectMapper;
+    private final IdentityAccess identityAccess;
+
+    public JdbcRunResultRepository(JdbcTemplate jdbc,
+                                   ObjectMapper objectMapper,
+                                   IdentityAccess identityAccess) {
+        this.jdbc = jdbc;
+        this.objectMapper = objectMapper;
+        this.identityAccess = identityAccess;
+    }
+
+    // ============================ 写入 ============================
+
+    @Override
+    public BatchOutcome appendBatch(long runId, List<ResultRecord> results, List<RunEventInput> events) {
+        // 写入前确认 run 存在；sink 调用方为运行引擎，已在 RunCoordinator 校验权限
+        Integer exists = jdbc.query(
+                "SELECT 1 FROM collection_run WHERE id = ?",
+                rs -> rs.next() ? 1 : null,
+                runId);
+        if (exists == null) {
+            throw new RunAccessDeniedException(runId);
+        }
+        int raw = results == null ? 0 : results.size();
+        int dedup = 0;
+        int inserted = 0;
+        int failed = 0;
+        if (results != null && !results.isEmpty()) {
+            for (ResultRecord r : results) {
+                try {
+                    boolean ok = insertResult(runId, r);
+                    if (ok) {
+                        inserted++;
+                    } else {
+                        dedup++;
+                    }
+                } catch (DataIntegrityViolationException dup) {
+                    // 并发兜底：另一线程同时插入了同 hash；仅唯一约束冲突（SQLState 23x）计 dedup，
+                    // 其余完整性异常（如 jsonb 拒绝 U+0000 的 SQLState 22x data exception）是行级失败。
+                    if (isUniqueConstraintViolation(dup)) {
+                        dedup++;
+                    } else {
+                        failed++;
+                        LOG.warn("appendBatch 行级失败 runId={} seq={}: {}",
+                                runId, r.sequenceNo(), safeMessage(dup));
+                    }
+                } catch (RuntimeException ex) {
+                    failed++;
+                    LOG.warn("appendBatch 行级失败 runId={} seq={}: {}",
+                            runId, r.sequenceNo(), safeMessage(ex));
+                }
+            }
+        }
+        if (events != null && !events.isEmpty()) {
+            try {
+                jdbc.update(con -> {
+                    PreparedStatement ps = con.prepareStatement(
+                            "INSERT INTO run_event (run_id, level, stage, url, error_code, message) "
+                                    + "VALUES (?, ?, ?, ?, ?, ?)");
+                    for (RunEventInput e : events) {
+                        ps.setLong(1, runId);
+                        ps.setString(2, e.level().name());
+                        ps.setString(3, e.stage());
+                        ps.setString(4, e.url());
+                        ps.setString(5, e.errorCode());
+                        ps.setString(6, e.message());
+                        ps.addBatch();
+                    }
+                    return ps;
+                });
+            } catch (RuntimeException ex) {
+                LOG.warn("appendBatch events failed runId={}: {}", runId, safeMessage(ex));
+            }
+        }
+        // 累加 collection_run 计数（spec §D6）
+        jdbc.update(
+                "UPDATE collection_run "
+                        + "SET record_count_raw = record_count_raw + ?, "
+                        + "    record_count_dedup = record_count_dedup + ?, "
+                        + "    record_count_final = record_count_final + ?, "
+                        + "    fail_count = fail_count + ? "
+                        + "WHERE id = ?",
+                raw, dedup, inserted, failed, runId);
+        return new BatchOutcome(raw, dedup, inserted, failed);
+    }
+
+    /**
+     * 单条 INSERT；hash 为 null 直接插入；非 null 先查后插（避免覆盖同 hash 已有行）。
+     *
+     * @return true 新行写入；false hash 重复被跳过
+     */
+    private boolean insertResult(long runId, ResultRecord r) {
+        byte[] hash = r.uniqueKeyHash();
+        if (hash == null) {
+            // 走无 hash 路径
+            jdbc.update(
+                    "INSERT INTO run_result (run_id, sequence_no, data) VALUES (?, ?, ?::jsonb)",
+                    runId, r.sequenceNo(), toJsonb(r.data()));
+            return true;
+        }
+        Integer exists = jdbc.query(
+                "SELECT 1 FROM run_result WHERE run_id = ? AND unique_key_hash = ? LIMIT 1",
+                rs -> rs.next() ? 1 : null,
+                runId, hash);
+        if (exists != null) {
+            return false;  // dedup
+        }
+        try {
+            jdbc.update(con -> {
+                PreparedStatement ps = con.prepareStatement(
+                        "INSERT INTO run_result (run_id, sequence_no, unique_key_hash, data) "
+                                + "VALUES (?, ?, ?, ?::jsonb)");
+                ps.setLong(1, runId);
+                ps.setInt(2, r.sequenceNo());
+                ps.setBytes(3, hash);
+                ps.setObject(4, toJsonb(r.data()));
+                return ps;
+            });
+            return true;
+        } catch (DataIntegrityViolationException dup) {
+            if (isUniqueConstraintViolation(dup)) {
+                return false;  // 并发兜底：另一线程刚插同样 hash
+            }
+            throw dup;  // 非唯一冲突的完整性异常（数据不可入库等）-> 交外层计 failed
+        }
+    }
+
+    /**
+     * 区分唯一约束冲突（SQLState 23x，语义上等同去重跳过）与其他完整性异常
+     * （如 jsonb 拒绝 U+0000 的 SQLState 22x data exception，应计行级失败）。
+     * Spring 的 SQLState 翻译把两类都包成 {@link DataIntegrityViolationException}，
+     * 须下钻到 JDBC cause 看 SQLState。
+     */
+    private static boolean isUniqueConstraintViolation(DataIntegrityViolationException ex) {
+        Throwable t = ex;
+        while (t != null) {
+            if (t instanceof SQLException sql && sql.getSQLState() != null) {
+                return sql.getSQLState().startsWith("23");
+            }
+            t = t.getCause();
+        }
+        return false;
+    }
+
+    private static final org.slf4j.Logger LOG =
+            org.slf4j.LoggerFactory.getLogger(JdbcRunResultRepository.class);
+
+    private static String safeMessage(Throwable t) {
+        if (t == null) return "";
+        String m = t.getMessage();
+        return m == null ? t.getClass().getSimpleName() : m;
+    }
+
+    // ============================ 查询 ============================
+
+    private static final int MAX_PAGE_SIZE = 1000;
+
+    @Override
+    public Page<ResultRecord> page(long runId, ActorId actor, int page, int size) {
+        verifyAccess(runId, actor);
+        int p = page <= 0 ? 1 : page;
+        int s = size <= 0 ? 1 : Math.min(size, MAX_PAGE_SIZE);
+        int startSeq = (p - 1) * s;
+        Long total = jdbc.queryForObject(
+                "SELECT count(*) FROM run_result WHERE run_id = ?",
+                Long.class, runId);
+        List<ResultRecord> items = jdbc.query(
+                "SELECT id, run_id, sequence_no, data, created_at FROM run_result "
+                        + "WHERE run_id = ? AND sequence_no >= ? "
+                        + "ORDER BY sequence_no ASC LIMIT ?",
+                resultRowMapper(), runId, startSeq, s);
+        return new Page<>(items, p, s, total == null ? 0L : total);
+    }
+
+    @Override
+    public RunStats stats(long runId, ActorId actor) {
+        verifyAccess(runId, actor);
+        try {
+            return jdbc.queryForObject(
+                    "SELECT record_count_raw, record_count_dedup, record_count_final, fail_count "
+                            + "FROM collection_run WHERE id = ?",
+                    (rs, rn) -> new RunStats(
+                            rs.getInt("record_count_raw"),
+                            rs.getInt("record_count_dedup"),
+                            rs.getInt("record_count_final"),
+                            rs.getInt("fail_count")),
+                    runId);
+        } catch (EmptyResultDataAccessException e) {
+            throw new RunAccessDeniedException(runId);
+        }
+    }
+
+    // ============================ 导出辅助（internal） ============================
+
+    /**
+     * 校验调用方对指定运行有访问权；非 owner 且非 admin 抛 {@link RunAccessDeniedException}。
+     * run 不存在也抛 {@link RunAccessDeniedException}（不回显存在性）。
+     */
+    void verifyAccess(long runId, ActorId actor) {
+        Long ownerId;
+        try {
+            ownerId = jdbc.queryForObject(
+                    "SELECT owner_id FROM collection_run WHERE id = ?",
+                    Long.class, runId);
+        } catch (EmptyResultDataAccessException e) {
+            throw new RunAccessDeniedException(runId);
+        }
+        if (ownerId == null) {
+            throw new RunAccessDeniedException(runId);
+        }
+        if (!identityAccess.canAccessTask(ownerId, actor)) {
+            throw new RunAccessDeniedException(runId);
+        }
+    }
+
+    /**
+     * 从 {@code collection_run.snapshot} 反序列化 {@code TaskDefinition}，
+     * 提取字段名列表（CSV 表头来源）。
+     */
+    List<String> fieldNames(long runId, ActorId actor) {
+        verifyAccess(runId, actor);
+        String json;
+        try {
+            json = jdbc.queryForObject(
+                    "SELECT snapshot::text FROM collection_run WHERE id = ?",
+                    String.class, runId);
+        } catch (EmptyResultDataAccessException e) {
+            throw new RunAccessDeniedException(runId);
+        }
+        if (json == null) {
+            throw new RunAccessDeniedException(runId);
+        }
+        try {
+            Map<String, Object> snapshot = objectMapper.readValue(json, Map.class);
+            Object def = snapshot == null ? null : snapshot.get("definition");
+            if (!(def instanceof Map<?, ?> defMap)) {
+                return List.of();
+            }
+            Object fields = defMap.get("fields");
+            if (!(fields instanceof List<?> list)) {
+                return List.of();
+            }
+            List<String> names = new ArrayList<>(list.size());
+            for (Object o : list) {
+                if (o instanceof Map<?, ?> fm) {
+                    Object n = fm.get("name");
+                    if (n instanceof String s && !s.isBlank()) {
+                        names.add(s);
+                    }
+                }
+            }
+            return List.copyOf(names);
+        } catch (JsonProcessingException e) {
+            throw new IllegalStateException("run.snapshot 反序列化失败", e);
+        }
+    }
+
+    /**
+     * keyset 流式拉取一批 {@code run_result}。
+     *
+     * @param runId  运行 id
+     * @param afterSeq 仅返回 {@code sequence_no > afterSeq} 的行；{@code -1} 表示从头开始
+     * @param limit  本批上限
+     * @return 本批结果（按 {@code sequence_no} 升序）；可能为空
+     */
+    List<ResultRecord> nextBatch(long runId, int afterSeq, int limit) {
+        return jdbc.query(
+                "SELECT id, run_id, sequence_no, data, created_at FROM run_result "
+                        + "WHERE run_id = ? AND sequence_no > ? "
+                        + "ORDER BY sequence_no ASC LIMIT ?",
+                resultRowMapper(), runId, afterSeq, limit);
+    }
+
+    // ============================ 事件查询（M3-5 #27）============================
+
+    @Override
+    public Page<RunEvent> pageEvents(long runId, ActorId actor, int page, int size) {
+        verifyAccess(runId, actor);
+        int p = page <= 0 ? 1 : page;
+        int s = size <= 0 ? 1 : Math.min(size, MAX_PAGE_SIZE);
+        int offset = (p - 1) * s;
+        Long total = jdbc.queryForObject(
+                "SELECT count(*) FROM run_event WHERE run_id = ?",
+                Long.class, runId);
+        List<RunEvent> items = jdbc.query(
+                "SELECT id, run_id, level, stage, url, error_code, message, created_at "
+                        + "FROM run_event WHERE run_id = ? "
+                        + "ORDER BY id ASC LIMIT ? OFFSET ?",
+                eventRowMapper(), runId, s, offset);
+        return new Page<>(items, p, s, total == null ? 0L : total);
+    }
+
+    @Override
+    public List<RunEvent> after(long runId, ActorId actor, long afterEventId) {
+        verifyAccess(runId, actor);
+        long startId = afterEventId <= 0 ? 0L : afterEventId;
+        return jdbc.query(
+                "SELECT id, run_id, level, stage, url, error_code, message, created_at "
+                        + "FROM run_event WHERE run_id = ? AND id > ? "
+                        + "ORDER BY id ASC LIMIT 1000",
+                eventRowMapper(), runId, startId);
+    }
+
+    private RowMapper<RunEvent> eventRowMapper() {
+        return (rs, rowNum) -> new RunEvent(
+                rs.getLong("id"),
+                rs.getLong("run_id"),
+                RunEventLevel.valueOf(rs.getString("level")),
+                rs.getString("stage"),
+                rs.getString("url"),
+                rs.getString("error_code"),
+                rs.getString("message"),
+                rs.getTimestamp("created_at") == null ? null
+                        : rs.getTimestamp("created_at").toInstant());
+    }
+
+    // ============================ RowMappers (instance) ============================
+
+    private RowMapper<ResultRecord> resultRowMapper() {
+        ObjectMapper mapper = this.objectMapper;
+        return (rs, rowNum) -> {
+            String json = rs.getString("data");
+            Map<String, String> data;
+            try {
+                data = parseJsonbStringMap(mapper, json);
+            } catch (JsonProcessingException e) {
+                throw new IllegalStateException("run_result.data 反序列化失败", e);
+            }
+            Timestamp ts = rs.getTimestamp("created_at");
+            Instant createdAt = ts == null ? null : ts.toInstant();
+            return new ResultRecord(
+                    rs.getLong("id"),
+                    rs.getLong("run_id"),
+                    rs.getInt("sequence_no"),
+                    data,
+                    createdAt);
+        };
+    }
+
+    // ============================ helpers ============================
+
+    private static Map<String, String> parseJsonbStringMap(ObjectMapper mapper, String json)
+            throws JsonProcessingException {
+        if (json == null || json.isBlank()) {
+            return Map.of();
+        }
+        Map<String, Object> raw = mapper.readValue(json, Map.class);
+        Map<String, String> out = new LinkedHashMap<>();
+        for (Map.Entry<String, Object> entry : raw.entrySet()) {
+            out.put(entry.getKey(), entry.getValue() == null ? null : entry.getValue().toString());
+        }
+        return out;
+    }
+
+    private PGobject toJsonb(Map<String, String> data) {
+        PGobject obj = new PGobject();
+        obj.setType("jsonb");
+        try {
+            obj.setValue(objectMapper.writeValueAsString(data));
+        } catch (JsonProcessingException | SQLException e) {
+            throw new IllegalArgumentException("ResultRecord.data 序列化失败", e);
+        }
+        return obj;
+    }
+}

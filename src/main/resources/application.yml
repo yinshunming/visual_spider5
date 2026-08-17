@@ -1,0 +1,46 @@
+spring:
+  application:
+    name: visual-spider5
+  # datasource / jpa / flyway 在 prod profile 下启用；dev / it 由 spring profile 决定是否激活
+  datasource:
+    url: ${VISUALSPIDER_DATASOURCE_URL:jdbc:postgresql://localhost:5432/visualspider}
+    username: ${VISUALSPIDER_DATASOURCE_USERNAME:visualspider}
+    password: ${VISUALSPIDER_DATASOURCE_PASSWORD:visualspider}
+    driver-class-name: org.postgresql.Driver
+  flyway:
+    enabled: ${VISUALSPIDER_FLYWAY_ENABLED:true}
+    baseline-on-migrate: true
+    locations: classpath:db/migration
+
+server:
+  port: 8080
+  # 同源部署；M1 spec §D6 — 不设 Secure（首版 HTTP 明文）
+
+# 初始管理员 seed：M1-1 只校验配置存在与最小长度；BCrypt 哈希写入由 M1-2 完成
+seed:
+  admin:
+    username: ${VISUALSPIDER_ADMIN_USERNAME:}
+    raw-password: ${VISUALSPIDER_ADMIN_PASSWORD:}
+
+# 关闭 mvn verify 默认执行 *IT；pg-it profile 显式开启
+skipITs: true
+
+logging:
+  level:
+    root: INFO
+    com.visualspider: INFO
+    # SQL DEBUG 仅 dev profile 启用；M1 不引入 dev profile
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      show-details: when-authorized
+      probes:
+        enabled: true
+  info:
+    env:
+      enabled: true
