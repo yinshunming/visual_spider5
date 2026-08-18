@@ -32,7 +32,7 @@ import org.springframework.stereotype.Service;
  * {@link TaskReadiness} 默认实现（M2-4 #20 / M3-1 #23 / M4-1 #31 / ADR-0005）。
  *
  * <p>{@link #validate} 完整校验：
- * schemaVersion（= 2；M4 spec §D10）、http(s) URL 语法、viewport 1280×720、
+ * schemaVersion（= 3；M4 §D10 / M5 §D11）、http(s) URL 语法、viewport 1280×720、
  * 至少 1 字段、字段名大小写不敏感唯一、selector 语法（CSS via Jsoup QueryParser /
  * XPath via JDK XPathFactory）、ATTRIBUTE 字段 attributeName 非空、PAGE_URL 字段
  * selector/attributeName 必空、{@code mode=LIST} 时 {@code listItemRule} 必填、
@@ -47,7 +47,7 @@ import org.springframework.stereotype.Service;
 @Service
 public class TaskReadinessImpl implements TaskReadiness {
 
-    private static final int EXPECTED_SCHEMA_VERSION = 2;
+    private static final int EXPECTED_SCHEMA_VERSION = 3;
     private final XPath xpathCompiler = XPathFactory.newInstance().newXPath();
     /** @Lazy 打破 TaskCatalog -> TaskReadiness -> TaskCatalog 构造期循环（ADR-0005）。 */
     private final TaskCatalog taskCatalog;
@@ -110,10 +110,10 @@ public class TaskReadinessImpl implements TaskReadiness {
     }
 
     /**
-     * M4 schemaVersion 校验（spec §D10）：
+     * schemaVersion 校验（M4 §D10 / M5 §D11）：
      * <ul>
-     *   <li>{@code schemaVersion == 2} → OK</li>
-     *   <li>{@code schemaVersion == 1} → {@code TASK_SCHEMA_OUTDATED}（启动 hook 应已升 V2；未升级则拒绝）</li>
+     *   <li>{@code schemaVersion == 3} → OK</li>
+     *   <li>{@code schemaVersion ∈ {1, 2}} → {@code TASK_SCHEMA_OUTDATED}（启动 hook / catalog 兜底应已升 V3；未经升级路径直接校验时拒绝）</li>
      *   <li>其它 → {@code TASK_UNSUPPORTED_SCHEMA}</li>
      * </ul>
      */
@@ -122,9 +122,9 @@ public class TaskReadinessImpl implements TaskReadiness {
         if (v == EXPECTED_SCHEMA_VERSION) {
             return;
         }
-        if (v == 1) {
+        if (v == 1 || v == 2) {
             errors.add(error(BusinessErrorCode.TASK_SCHEMA_OUTDATED,
-                    "schemaVersion=1 已过时，请重新保存任务以升级到 V2", "schemaVersion"));
+                    "schemaVersion=" + v + " 已过时，请重新保存任务以升级到 V3", "schemaVersion"));
             return;
         }
         errors.add(error(BusinessErrorCode.TASK_UNSUPPORTED_SCHEMA,

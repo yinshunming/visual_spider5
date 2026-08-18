@@ -16,14 +16,19 @@ import java.util.List;
  * </ul>
  *
  * <p><b>M3 扩展</b>（spec §D6）：新增 {@code waitPolicy}（{@link WaitPolicy}，
- * 可空 → 默认 {@code WaitPolicy(0)}）；{@link FieldDefinition} 加 {@code selectorType}
- * （{@link SelectorType}，可空 → 默认 CSS）；{@code schemaVersion} 保持 1（加字段非破坏性）。
+ * 可空 -> 默认 {@code WaitPolicy(0)}）；{@link FieldDefinition} 加 {@code selectorType}
+ * （{@link SelectorType}，可空 -> 默认 CSS）；{@code schemaVersion} 保持 1（加字段非破坏性）。
  *
- * <p><b>M4 扩展</b>（spec §D1）：新增 {@code limits}（{@link Limits}，可空 → 默认
+ * <p><b>M4 扩展</b>（spec §D1）：新增 {@code limits}（{@link Limits}，可空 -> 默认
  * {@link Limits#globalDefault()}）、{@code listItemRule}（{@link ListItemRule}，LIST 模式必填）、
- * {@code uniqueKey}（{@link List<UniqueKeyField>}，可空 → 默认空 list）；{@code schemaVersion}
+ * {@code uniqueKey}（{@link List<UniqueKeyField>}，可空 -> 默认空 list）；{@code schemaVersion}
  * bump 到 2。{@code TaskSchemaUpgrader} 启动 hook 静默将 V1 SP 任务迁移到 V2、V1 LIST 任务
  * 缺 {@code listItemRule} 一律降 DRAFT。
+ *
+ * <p><b>M5 扩展</b>（spec §D1）：新增 {@code paginationRule}（{@link PaginationRule}，
+ * 可空 -> 等价"只跑当前页"）；{@link FieldDefinition} 加 {@code scope} + {@code fieldKind}；
+ * {@code schemaVersion} bump 到 3。{@code TaskSchemaUpgrader} 启动 hook 静默将 V2 任务升 V3
+ * （仅 bump {@code schemaVersion}，不引入数据变更）。
  *
  * <p>{@code @JsonIgnoreProperties(ignoreUnknown = true)} 保证 schema 升级时旧 reader 仍可读新快照。
  */
@@ -37,13 +42,14 @@ public record TaskDefinition(
         Limits limits,
         ListItemRule listItemRule,
         List<UniqueKeyField> uniqueKey,
+        PaginationRule paginationRule,
         List<FieldDefinition> fields) {
 
     public TaskDefinition {
         if (fields == null) {
             fields = List.of();
         }
-        // 反序列化旧快照时 waitPolicy 缺失 → 默认 WaitPolicy(0)；M4 新字段同样给默认值。
+        // 反序列化旧快照时 waitPolicy 缺失 -> 默认 WaitPolicy(0)；M4 / M5 新字段同样给默认值。
         if (waitPolicy == null) {
             waitPolicy = new WaitPolicy(0);
         }
@@ -53,14 +59,15 @@ public record TaskDefinition(
         if (uniqueKey == null) {
             uniqueKey = List.of();
         }
+        // paginationRule 可空：executor 检测到 null 时退化为"只跑当前页"（spec §D1）。
     }
 
     /**
      * M3 / M2 兼容构造器（6 位置参数对应 V1 字段）。
      *
-     * <p>新增的三个 V2 字段（{@code limits} / {@code listItemRule} / {@code uniqueKey}）
-     * 全部传 {@code null}，由紧凑构造器填默认值。这允许 M3 测试、m2/m3 调用点继续使用旧
-     * 位置参数签名，运行时 upgrader 会把 snapshot 升到 V2。
+     * <p>新增的三个 V2 字段（{@code limits} / {@code listItemRule} / {@code uniqueKey}）与
+     * V3 字段 {@code paginationRule} 全部传 {@code null}，由紧凑构造器填默认值。这允许
+     * M3 测试、m2/m3 调用点继续使用旧位置参数签名，运行时 upgrader 会把 snapshot 升到 V3。
      */
     public TaskDefinition(int schemaVersion,
                           TaskMode mode,
@@ -68,6 +75,25 @@ public record TaskDefinition(
                           Viewport viewport,
                           WaitPolicy waitPolicy,
                           List<FieldDefinition> fields) {
-        this(schemaVersion, mode, startUrl, viewport, waitPolicy, null, null, null, fields);
+        this(schemaVersion, mode, startUrl, viewport, waitPolicy, null, null, null, null, fields);
+    }
+
+    /**
+     * M4 兼容构造器（9 位置参数对应 V2 字段）。
+     *
+     * <p>V3 新字段 {@code paginationRule} 传 {@code null}（等价"只跑当前页"）；
+     * M4 调用点 / 测试继续使用旧签名，运行时 upgrader 会把 snapshot 升到 V3。
+     */
+    public TaskDefinition(int schemaVersion,
+                          TaskMode mode,
+                          String startUrl,
+                          Viewport viewport,
+                          WaitPolicy waitPolicy,
+                          Limits limits,
+                          ListItemRule listItemRule,
+                          List<UniqueKeyField> uniqueKey,
+                          List<FieldDefinition> fields) {
+        this(schemaVersion, mode, startUrl, viewport, waitPolicy,
+                limits, listItemRule, uniqueKey, null, fields);
     }
 }

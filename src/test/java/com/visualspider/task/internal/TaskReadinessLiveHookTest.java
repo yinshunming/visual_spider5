@@ -71,7 +71,7 @@ class TaskReadinessLiveHookTest {
     @DisplayName("AlwaysPass 占位 hook 永 ok（SINGLE_PAGE 路径无需 live 检查）")
     void alwaysPassSinglePage() {
         TaskReadinessImpl readiness = new TaskReadinessImpl(null, new AlwaysPassLiveReadinessHook());
-        TaskDefinition def = new TaskDefinition(2, new TaskMode.SinglePage(),
+        TaskDefinition def = new TaskDefinition(3, new TaskMode.SinglePage(),
                 "https://example.com", Viewport.DEFAULT, null, null, null, null,
                 List.of(new FieldDefinition("title", FieldSource.VISIBLE_TEXT, "h1", null,
                         SelectorType.CSS, ResultType.TEXT, TrimPolicy.TRIM, null, true)));
@@ -92,7 +92,7 @@ class TaskReadinessLiveHookTest {
     }
 
     static TaskDefinition validListTask() {
-        return new TaskDefinition(2, new TaskMode.List(),
+        return new TaskDefinition(3, new TaskMode.List(),
                 "https://example.com", Viewport.DEFAULT, null,
                 new com.visualspider.task.domain.Limits(100, 500, Duration.ofMinutes(15)),
                 new ListItemRule("ul > li", SelectorType.CSS),

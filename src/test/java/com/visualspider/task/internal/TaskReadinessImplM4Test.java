@@ -120,20 +120,20 @@ class TaskReadinessImplM4Test {
 
     private static TaskDefinition listTaskWithFields(String listSelector, List<FieldDefinition> fields) {
         return new TaskDefinition(
-                2, new TaskMode.List(), "https://example.com/list",
+                3, new TaskMode.List(), "https://example.com/list",
                 Viewport.DEFAULT, new WaitPolicy(0),
                 new Limits(200, 10_000, Duration.ofMinutes(30)),
                 new ListItemRule(listSelector, SelectorType.CSS),
-                List.of(),
+                List.of(), null,
                 fields);
     }
 
     private static TaskDefinition singlePageTask(List<FieldDefinition> fields) {
         return new TaskDefinition(
-                2, new TaskMode.SinglePage(), "https://example.com",
+                3, new TaskMode.SinglePage(), "https://example.com",
                 Viewport.DEFAULT, new WaitPolicy(0),
                 new Limits(200, 10_000, Duration.ofMinutes(30)),
-                null, null,
+                null, null, null,
                 fields);
     }
 

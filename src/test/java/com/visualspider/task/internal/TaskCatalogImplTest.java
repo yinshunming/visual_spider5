@@ -50,7 +50,9 @@ class TaskCatalogImplTest {
 
     @BeforeEach
     void setUp() {
-        catalog = new TaskCatalogImpl(repository, identityAccess, readiness);
+        // M5 spec §D3：reader/writer 经 TaskSchemaUpgrader 兜底升级 V2 -> V3。
+        catalog = new TaskCatalogImpl(repository, identityAccess, readiness,
+                new TaskSchemaUpgrader(null, null));
         lenient().when(readiness.validate(any())).thenReturn(ReadinessReport.success());
     }
 

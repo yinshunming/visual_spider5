@@ -101,7 +101,7 @@ class TaskReadinessImplM2Test {
                 List.of(field("title", "h1", null, FieldSource.VISIBLE_TEXT, null, null)));
         com.visualspider.task.domain.TaskDraft draft = new com.visualspider.task.domain.TaskDraft(
                 11L, 1L, "demo", new SinglePage(), com.visualspider.task.domain.TaskStatus.DRAFT,
-                1, 5L, valid, java.time.OffsetDateTime.now());
+                3, 5L, valid, java.time.OffsetDateTime.now());
         com.visualspider.task.spi.TaskCatalog catalog = new com.visualspider.task.spi.TaskCatalog() {
             @Override public long createDraft(com.visualspider.task.domain.TaskDefinition d, String n, com.visualspider.identity.domain.ActorId a) { throw new UnsupportedOperationException(); }
             @Override public java.util.List<com.visualspider.task.domain.TaskSummary> listMine(com.visualspider.identity.domain.ActorId actor) { throw new UnsupportedOperationException(); }
@@ -120,7 +120,7 @@ class TaskReadinessImplM2Test {
                 List.of(field("bad", "<<<broken", null, FieldSource.VISIBLE_TEXT, null, null)));
         com.visualspider.task.domain.TaskDraft draft = new com.visualspider.task.domain.TaskDraft(
                 11L, 1L, "demo", new SinglePage(), com.visualspider.task.domain.TaskStatus.DRAFT,
-                1, 5L, invalid, java.time.OffsetDateTime.now());
+                3, 5L, invalid, java.time.OffsetDateTime.now());
         com.visualspider.task.spi.TaskCatalog catalog = new com.visualspider.task.spi.TaskCatalog() {
             @Override public long createDraft(com.visualspider.task.domain.TaskDefinition d, String n, com.visualspider.identity.domain.ActorId a) { throw new UnsupportedOperationException(); }
             @Override public java.util.List<com.visualspider.task.domain.TaskSummary> listMine(com.visualspider.identity.domain.ActorId actor) { throw new UnsupportedOperationException(); }
@@ -136,7 +136,7 @@ class TaskReadinessImplM2Test {
     }
 
     private static TaskDefinition definition(String startUrl, List<FieldDefinition> fields) {
-        return new TaskDefinition(2, new SinglePage(), startUrl, Viewport.DEFAULT, null, fields);
+        return new TaskDefinition(3, new SinglePage(), startUrl, Viewport.DEFAULT, null, fields);
     }
 
     private static FieldDefinition field(String name, String selector, String attribute,

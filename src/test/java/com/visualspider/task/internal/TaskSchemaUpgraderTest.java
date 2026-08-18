@@ -10,6 +10,7 @@ import static org.mockito.Mockito.when;
 
 import com.visualspider.task.domain.ListItemRule;
 import com.visualspider.task.domain.Limits;
+import com.visualspider.task.domain.SelectorType;
 import com.visualspider.task.domain.TaskDefinition;
 import com.visualspider.task.domain.TaskDraft;
 import com.visualspider.task.domain.TaskMode;
@@ -18,6 +19,7 @@ import com.visualspider.task.domain.Viewport;
 import com.visualspider.task.spi.TaskRepository;
 import java.time.OffsetDateTime;
 import java.util.Collections;
+import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -30,9 +32,10 @@ import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
 
 /**
- * {@link TaskSchemaUpgrader} 单元测试（M4 spec §D2）。
+ * {@link TaskSchemaUpgrader} 单元测试（M4 §D2 / M5 §D3）。
  *
  * <p>不依赖真实 PG；用 Mockito 替换 {@link NamedParameterJdbcTemplate} 验证 SQL 参数与影响行数。
+ * 真实 PG V2 -> V3 升级路径留 IT 阶段跟进（与 M4 V1 -> V2 同症，诚实标注）。
  */
 @ExtendWith(MockitoExtension.class)
 class TaskSchemaUpgraderTest {
@@ -79,7 +82,7 @@ class TaskSchemaUpgraderTest {
     void downgradeV1ListMissingRule() {
         when(jdbc.update(eq("""
                 UPDATE collection_task
-                SET status = ?
+                SET status = :status
                 WHERE mode = 'LIST'
                   AND (definition->>'schemaVersion')::int = 1
                   AND NOT (definition ? 'listItemRule')
@@ -89,21 +92,45 @@ class TaskSchemaUpgraderTest {
     }
 
     @Test
-    @DisplayName("run：两次 update 都返 0 不抛异常（idle 路径）")
-    void runNoopWhenNothingToMigrate() {
-        when(jdbc.update(any(String.class), any(MapSqlParameterSource.class))).thenReturn(0);
-        upgrader.run(new TestApplicationArguments());
-        verify(jdbc, times(2)).update(any(String.class), any(MapSqlParameterSource.class));
+    @DisplayName("upgradeV2ToV3 命中 4 行 → 4（SQL 用 :status 同款命名参数）")
+    void upgradeV2ToV3ReturnsRowsAffected() {
+        when(jdbc.update(contains("UPDATE collection_task"), any(MapSqlParameterSource.class)))
+                .thenReturn(4);
+        int n = upgrader.upgradeV2ToV3();
+        assertThat(n).isEqualTo(4);
     }
 
     @Test
-    @DisplayName("run：一次 update 抛 RuntimeException 不阻断启动（异常兜底）")
+    @DisplayName("upgradeV2ToV3 SQL 用 jsonb_set 把 schemaVersion 改 3")
+    void upgradeV2ToV3UsesJsonbSet() {
+        when(jdbc.update(contains("UPDATE collection_task"), any(MapSqlParameterSource.class)))
+                .thenReturn(1);
+        upgrader.upgradeV2ToV3();
+        ArgumentCaptor<String> sqlCaptor = ArgumentCaptor.forClass(String.class);
+        verify(jdbc).update(sqlCaptor.capture(), any(MapSqlParameterSource.class));
+        String sql = sqlCaptor.getValue();
+        assertThat(sql).contains("jsonb_set(definition, '{schemaVersion}', '3'::jsonb)");
+        assertThat(sql).contains("schema_version = 3");
+        assertThat(sql).contains("(definition->>'schemaVersion')::int = 2");
+    }
+
+    @Test
+    @DisplayName("run：三次 update 都返 0 不抛异常（idle 路径）")
+    void runNoopWhenNothingToMigrate() {
+        when(jdbc.update(any(String.class), any(MapSqlParameterSource.class))).thenReturn(0);
+        upgrader.run(new TestApplicationArguments());
+        // V1->V2 + V1 LIST downgrade + V2->V3 共 3 次 update
+        verify(jdbc, times(3)).update(any(String.class), any(MapSqlParameterSource.class));
+    }
+
+    @Test
+    @DisplayName("run：单次 update 抛 RuntimeException 不阻断启动（异常兜底）")
     void runSwallowsRuntimeException() {
         when(jdbc.update(any(String.class), any(MapSqlParameterSource.class)))
                 .thenThrow(new RuntimeException("transient"));
-        // 不抛：upgrader 内部 try/catch + LOG.warn
+        // V1->V2 抛异常后被 catch, V1 LIST downgrade 与 V2->V3 仍尝试
         upgrader.run(new TestApplicationArguments());
-        verify(jdbc, times(1)).update(any(String.class), any(MapSqlParameterSource.class));
+        verify(jdbc, times(3)).update(any(String.class), any(MapSqlParameterSource.class));
     }
 
     @Test
@@ -126,16 +153,60 @@ class TaskSchemaUpgraderTest {
     }
 
     @Test
-    @DisplayName("upgradeIfNeeded V2 draft → 原样返回（idempotent）")
-    void upgradeIfNeededV2Idempotent() {
-        TaskDraft v2 = newDraft(2, false, null);
-        assertThat(upgrader.upgradeIfNeeded(v2)).isSameAs(v2);
+    @DisplayName("upgradeIfNeeded V3 draft → 原样返回（idempotent）")
+    void upgradeIfNeededV3Idempotent() {
+        TaskDraft v3 = newDraft(3, false, null);
+        assertThat(upgrader.upgradeIfNeeded(v3)).isSameAs(v3);
     }
 
     @Test
-    @DisplayName("upgradeIfNeeded null → null")
+    @DisplayName("upgradeIfNeeded V2 draft → 内存升 V3，paginationRule=null 默认")
+    void upgradeIfNeededV2UpgradesInMemory() {
+        TaskDraft v2 = newDraft(2, false, null);
+        TaskDraft upgraded = upgrader.upgradeIfNeeded(v2);
+        assertThat(upgraded).isNotSameAs(v2);
+        assertThat(upgraded.schemaVersion()).isEqualTo(3);
+        assertThat(upgraded.definition().schemaVersion()).isEqualTo(3);
+        assertThat(upgraded.definition().paginationRule()).isNull();
+    }
+
+    @Test
+    @DisplayName("upgradeIfNeeded V1 draft → 内存升 V3，紧凑构造器填 limits 默认")
+    void upgradeIfNeededV1UpgradesInMemory() {
+        TaskDraft v1 = newDraft(1, false, null);
+        TaskDraft upgraded = upgrader.upgradeIfNeeded(v1);
+        assertThat(upgraded.schemaVersion()).isEqualTo(3);
+        assertThat(upgraded.definition().schemaVersion()).isEqualTo(3);
+        assertThat(upgraded.definition().limits()).isEqualTo(Limits.globalDefault());
+    }
+
+    @Test
+    @DisplayName("upgradeIfNeeded(TaskDefinition) V2 → 内存升 V3（writer 路径）")
+    void upgradeIfNeededDefinitionV2() {
+        TaskDefinition v2 = new TaskDefinition(
+                2, new TaskMode.SinglePage(), "https://example.com", Viewport.DEFAULT,
+                null, null, null, null,
+                List.of(new com.visualspider.task.domain.FieldDefinition("t",
+                        com.visualspider.task.domain.FieldSource.VISIBLE_TEXT, "h1",
+                        null, SelectorType.CSS, com.visualspider.task.domain.ResultType.TEXT,
+                        com.visualspider.task.domain.TrimPolicy.TRIM, null, true)));
+        TaskDefinition upgraded = upgrader.upgradeIfNeeded(v2);
+        assertThat(upgraded.schemaVersion()).isEqualTo(3);
+    }
+
+    @Test
+    @DisplayName("upgradeIfNeeded(TaskDefinition) V3 → 原样返回（idempotent）")
+    void upgradeIfNeededDefinitionV3Idempotent() {
+        TaskDefinition v3 = new TaskDefinition(
+                3, new TaskMode.SinglePage(), "https://example.com", Viewport.DEFAULT,
+                null, null, null, null, null, Collections.emptyList());
+        assertThat(upgrader.upgradeIfNeeded(v3)).isSameAs(v3);
+    }
+
+    @Test
+    @DisplayName("upgradeIfNeeded null TaskDraft → null")
     void upgradeIfNeededNull() {
-        assertThat(upgrader.upgradeIfNeeded(null)).isNull();
+        assertThat(upgrader.upgradeIfNeeded((TaskDraft) null)).isNull();
     }
 
     private static TaskDraft newDraft(int schemaVersion, boolean isList,

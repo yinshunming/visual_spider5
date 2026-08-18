@@ -38,7 +38,7 @@ class TaskReadinessImplTest {
     }
 
     @Test
-    @DisplayName("schemaVersion != 2 → TASK_UNSUPPORTED_SCHEMA（M4 未兼容版本）")
+    @DisplayName("schemaVersion != 3 → TASK_UNSUPPORTED_SCHEMA（M5 未兼容版本）")
     void schemaVersionUnsupported() {
         TaskDefinition def = new TaskDefinition(99, new TaskMode.SinglePage(),
                 "https://example.com", Viewport.DEFAULT, null,
@@ -52,9 +52,23 @@ class TaskReadinessImplTest {
     }
 
     @Test
-    @DisplayName("schemaVersion == 1（M3 历史） → TASK_SCHEMA_OUTDATED（M4 §D10）")
+    @DisplayName("schemaVersion == 1（M3 历史） → TASK_SCHEMA_OUTDATED（M5 §D11）")
     void schemaVersionV1Outdated() {
         TaskDefinition def = new TaskDefinition(1, new TaskMode.SinglePage(),
+                "https://example.com", Viewport.DEFAULT, null,
+                List.of(new FieldDefinition("title", FieldSource.VISIBLE_TEXT, "h1", null,
+                        SelectorType.CSS, ResultType.TEXT, TrimPolicy.TRIM, null, true)));
+        ReadinessReport report = readiness.validate(def);
+        assertThat(report.ready()).isFalse();
+        assertThat(report.errors())
+                .extracting(ReadinessReport.ReadinessError::code)
+                .contains("TASK_SCHEMA_OUTDATED");
+    }
+
+    @Test
+    @DisplayName("schemaVersion == 2（M4 历史） → TASK_SCHEMA_OUTDATED（M5 §D11；upgrader 应已升 V3）")
+    void schemaVersionV2Outdated() {
+        TaskDefinition def = new TaskDefinition(2, new TaskMode.SinglePage(),
                 "https://example.com", Viewport.DEFAULT, null,
                 List.of(new FieldDefinition("title", FieldSource.VISIBLE_TEXT, "h1", null,
                         SelectorType.CSS, ResultType.TEXT, TrimPolicy.TRIM, null, true)));
@@ -69,7 +83,7 @@ class TaskReadinessImplTest {
     @DisplayName("mode=LIST 缺 listItemRule → LIST_ITEM_RULE_MISSING（M4 §D10）")
     void listItemRuleMissing() {
         // 6 位置参数：listItemRule 缺省为 null（M3 兼容构造器）
-        TaskDefinition def = new TaskDefinition(2, new TaskMode.List(),
+        TaskDefinition def = new TaskDefinition(3, new TaskMode.List(),
                 "https://example.com", Viewport.DEFAULT, null,
                 List.of(new FieldDefinition("title", FieldSource.VISIBLE_TEXT, "h1", null,
                         SelectorType.CSS, ResultType.TEXT, TrimPolicy.TRIM, null, true)));
@@ -84,7 +98,7 @@ class TaskReadinessImplTest {
     @DisplayName("mode=LIST 完整 listItemRule + uniqueKey 合法 → ready=true（M4 §D10）")
     void listTaskReadyWithRuleAndKeys() {
         // 9 位置参数显式构造 V2 完整形状
-        TaskDefinition def = new TaskDefinition(2, new TaskMode.List(),
+        TaskDefinition def = new TaskDefinition(3, new TaskMode.List(),
                 "https://example.com", Viewport.DEFAULT, null,
                 new com.visualspider.task.domain.Limits(100, 500, java.time.Duration.ofMinutes(15)),
                 new com.visualspider.task.domain.ListItemRule("ul > li", SelectorType.CSS),
@@ -98,7 +112,7 @@ class TaskReadinessImplTest {
     @Test
     @DisplayName("uniqueKey.fieldName 不在 fields.name → UNIQUE_KEY_UNKNOWN_FIELD")
     void uniqueKeyUnknownField() {
-        TaskDefinition def = new TaskDefinition(2, new TaskMode.List(),
+        TaskDefinition def = new TaskDefinition(3, new TaskMode.List(),
                 "https://example.com", Viewport.DEFAULT, null,
                 new com.visualspider.task.domain.Limits(100, 500, java.time.Duration.ofMinutes(15)),
                 new com.visualspider.task.domain.ListItemRule("ul > li", SelectorType.CSS),
@@ -131,7 +145,7 @@ class TaskReadinessImplTest {
     @Test
     @DisplayName("startUrl 非 http(s) → TASK_INVALID_URL")
     void startUrlInvalidScheme() {
-        TaskDefinition def = new TaskDefinition(2, new TaskMode.SinglePage(),
+        TaskDefinition def = new TaskDefinition(3, new TaskMode.SinglePage(),
                 "ftp://example.com", Viewport.DEFAULT, null,
                 List.of(new FieldDefinition("title", FieldSource.VISIBLE_TEXT, "h1", null,
                         SelectorType.CSS, ResultType.TEXT, TrimPolicy.TRIM, null, true)));
@@ -145,7 +159,7 @@ class TaskReadinessImplTest {
     @Test
     @DisplayName("startUrl 缺 host → TASK_INVALID_URL")
     void startUrlMissingHost() {
-        TaskDefinition def = new TaskDefinition(2, new TaskMode.SinglePage(),
+        TaskDefinition def = new TaskDefinition(3, new TaskMode.SinglePage(),
                 "https://", Viewport.DEFAULT, null,
                 List.of(new FieldDefinition("title", FieldSource.VISIBLE_TEXT, "h1", null,
                         SelectorType.CSS, ResultType.TEXT, TrimPolicy.TRIM, null, true)));
@@ -159,7 +173,7 @@ class TaskReadinessImplTest {
     @Test
     @DisplayName("startUrl 为空 → TASK_INVALID_URL")
     void startUrlBlank() {
-        TaskDefinition def = new TaskDefinition(2, new TaskMode.SinglePage(),
+        TaskDefinition def = new TaskDefinition(3, new TaskMode.SinglePage(),
                 "", Viewport.DEFAULT, null,
                 List.of(new FieldDefinition("title", FieldSource.VISIBLE_TEXT, "h1", null,
                         SelectorType.CSS, ResultType.TEXT, TrimPolicy.TRIM, null, true)));
@@ -173,7 +187,7 @@ class TaskReadinessImplTest {
     @Test
     @DisplayName("viewport 非 1280x720 → TASK_INVALID_VIEWPORT")
     void viewportInvalid() {
-        TaskDefinition def = new TaskDefinition(2, new TaskMode.SinglePage(),
+        TaskDefinition def = new TaskDefinition(3, new TaskMode.SinglePage(),
                 "https://example.com", new Viewport(800, 600), null,
                 List.of(new FieldDefinition("title", FieldSource.VISIBLE_TEXT, "h1", null,
                         SelectorType.CSS, ResultType.TEXT, TrimPolicy.TRIM, null, true)));
@@ -191,7 +205,7 @@ class TaskReadinessImplTest {
                 SelectorType.CSS, ResultType.TEXT, TrimPolicy.TRIM, null, true);
         FieldDefinition f2 = new FieldDefinition("title", FieldSource.VISIBLE_TEXT, ".body", null,
                 SelectorType.CSS, ResultType.TEXT, TrimPolicy.TRIM, null, false);
-        TaskDefinition def = new TaskDefinition(2, new TaskMode.SinglePage(),
+        TaskDefinition def = new TaskDefinition(3, new TaskMode.SinglePage(),
                 "https://example.com", Viewport.DEFAULT, null, List.of(f1, f2));
         ReadinessReport report = readiness.validate(def);
         assertThat(report.ready()).isFalse();
@@ -205,7 +219,7 @@ class TaskReadinessImplTest {
     void fieldNameBlank() {
         FieldDefinition f = new FieldDefinition("", FieldSource.VISIBLE_TEXT, "h1", null,
                 SelectorType.CSS, ResultType.TEXT, TrimPolicy.TRIM, null, true);
-        TaskDefinition def = new TaskDefinition(2, new TaskMode.SinglePage(),
+        TaskDefinition def = new TaskDefinition(3, new TaskMode.SinglePage(),
                 "https://example.com", Viewport.DEFAULT, null, List.of(f));
         ReadinessReport report = readiness.validate(def);
         assertThat(report.ready()).isFalse();
@@ -218,7 +232,7 @@ class TaskReadinessImplTest {
     @DisplayName("mode=LIST 缺 listItemRule 在 V2 拒绝就绪（M4 §D10）")
     void listModeAcceptable() {
         // V2 行为：mode=LIST 必填 listItemRule；缺少时不可就绪。
-        TaskDefinition def = new TaskDefinition(2, new TaskMode.List(),
+        TaskDefinition def = new TaskDefinition(3, new TaskMode.List(),
                 "https://example.com", Viewport.DEFAULT, null,
                 List.of(new FieldDefinition("title", FieldSource.VISIBLE_TEXT, "h1", null,
                         SelectorType.CSS, ResultType.TEXT, TrimPolicy.TRIM, null, true)));
@@ -241,7 +255,7 @@ class TaskReadinessImplTest {
     @Test
     @DisplayName("waitPolicy=null 被默认值填充（WaitPolicy(0)）")
     void waitPolicyDefaultsWhenNull() {
-        TaskDefinition def = new TaskDefinition(2, new TaskMode.SinglePage(),
+        TaskDefinition def = new TaskDefinition(3, new TaskMode.SinglePage(),
                 "https://example.com", Viewport.DEFAULT, null,
                 List.of(new FieldDefinition("title", FieldSource.VISIBLE_TEXT, "h1", null,
                         SelectorType.CSS, ResultType.TEXT, TrimPolicy.TRIM, null, true)));
@@ -252,7 +266,7 @@ class TaskReadinessImplTest {
     @Test
     @DisplayName("waitPolicy 合法（WaitPolicy(3)）→ ready=true")
     void waitPolicyValid() {
-        TaskDefinition def = new TaskDefinition(2, new TaskMode.SinglePage(),
+        TaskDefinition def = new TaskDefinition(3, new TaskMode.SinglePage(),
                 "https://example.com", Viewport.DEFAULT, new WaitPolicy(3),
                 List.of(new FieldDefinition("title", FieldSource.VISIBLE_TEXT, "h1", null,
                         SelectorType.CSS, ResultType.TEXT, TrimPolicy.TRIM, null, true)));
@@ -270,7 +284,7 @@ class TaskReadinessImplTest {
     @Test
     @DisplayName("field.selectorType=XPATH 合法 → ready=true")
     void selectorTypeXpathValid() {
-        TaskDefinition def = new TaskDefinition(2, new TaskMode.SinglePage(),
+        TaskDefinition def = new TaskDefinition(3, new TaskMode.SinglePage(),
                 "https://example.com", Viewport.DEFAULT, null,
                 List.of(new FieldDefinition("title", FieldSource.VISIBLE_TEXT, "//h1", null,
                         SelectorType.XPATH, ResultType.TEXT, TrimPolicy.TRIM, null, true)));
@@ -281,7 +295,7 @@ class TaskReadinessImplTest {
     @Test
     @DisplayName("PAGE_URL 字段 selectorType 忽略（不影响校验）")
     void pageUrlFieldSelectorTypeIgnored() {
-        TaskDefinition def = new TaskDefinition(2, new TaskMode.SinglePage(),
+        TaskDefinition def = new TaskDefinition(3, new TaskMode.SinglePage(),
                 "https://example.com", Viewport.DEFAULT, null,
                 List.of(new FieldDefinition("url", FieldSource.PAGE_URL, null, null,
                         SelectorType.XPATH, ResultType.TEXT, TrimPolicy.TRIM, null, false)));
@@ -298,7 +312,7 @@ class TaskReadinessImplTest {
     }
 
     private static TaskDefinition singlePage() {
-        return new TaskDefinition(2, new TaskMode.SinglePage(),
+        return new TaskDefinition(3, new TaskMode.SinglePage(),
                 "https://example.com", Viewport.DEFAULT, null,
                 List.of(new FieldDefinition("title", FieldSource.VISIBLE_TEXT, "h1", null,
                         SelectorType.CSS, ResultType.TEXT, TrimPolicy.TRIM, null, true)));

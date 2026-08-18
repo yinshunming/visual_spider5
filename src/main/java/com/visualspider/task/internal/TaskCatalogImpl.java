@@ -33,11 +33,15 @@ public class TaskCatalogImpl implements TaskCatalog {
     private final TaskRepository repository;
     private final IdentityAccess identityAccess;
     private final TaskReadiness readiness;
+    /** M5 spec §D3：reader 兜底 + writer 统一走 upgrader（V2 定义静默升 V3 再校验/持久化）。 */
+    private final TaskSchemaUpgrader schemaUpgrader;
 
-    public TaskCatalogImpl(TaskRepository repository, IdentityAccess identityAccess, TaskReadiness readiness) {
+    public TaskCatalogImpl(TaskRepository repository, IdentityAccess identityAccess,
+                           TaskReadiness readiness, TaskSchemaUpgrader schemaUpgrader) {
         this.repository = repository;
         this.identityAccess = identityAccess;
         this.readiness = readiness;
+        this.schemaUpgrader = schemaUpgrader;
     }
 
     @Override
@@ -45,11 +49,12 @@ public class TaskCatalogImpl implements TaskCatalog {
         if (name == null || name.isBlank()) {
             throw new IllegalArgumentException("任务名不能为空");
         }
-        ReadinessReport report = readiness.validate(draft);
+        TaskDefinition upgraded = schemaUpgrader.upgradeIfNeeded(draft);
+        ReadinessReport report = readiness.validate(upgraded);
         if (!report.ready()) {
             throw new TaskInvalidDefinitionException(report.errors());
         }
-        long id = repository.insert(actor.value(), name, draft);
+        long id = repository.insert(actor.value(), name, upgraded);
         LOG.info("createDraft: id={} ownerId={} name={}", id, actor.value(), name);
         return id;
     }
@@ -69,7 +74,8 @@ public class TaskCatalogImpl implements TaskCatalog {
         if (!identityAccess.canAccessTask(draft.ownerId(), actor)) {
             throw new AccessDeniedException("无权访问该任务");
         }
-        return draft;
+        // M5 spec §D3：reader 兜底——启动 hook 未跑/未命中时，V2 任务在内存升 V3 再返回。
+        return schemaUpgrader.upgradeIfNeeded(draft);
     }
 
     @Override
@@ -84,11 +90,12 @@ public class TaskCatalogImpl implements TaskCatalog {
         if (existing.status() != TaskStatus.DRAFT) {
             throw new IllegalStateException("非 DRAFT 状态不允许编辑");
         }
-        ReadinessReport report = readiness.validate(draft);
+        TaskDefinition upgraded = schemaUpgrader.upgradeIfNeeded(draft);
+        ReadinessReport report = readiness.validate(upgraded);
         if (!report.ready()) {
             throw new TaskInvalidDefinitionException(report.errors());
         }
-        boolean updated = repository.updateDraft(taskId, draft, expectedVersion);
+        boolean updated = repository.updateDraft(taskId, upgraded, expectedVersion);
         if (!updated) {
             // 并发场景：UPDATE 0 行（版本已被另一线程修改）
             TaskDraft now = repository.findById(taskId).orElseThrow(() -> new TaskNotFoundException(taskId));
