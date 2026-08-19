@@ -43,6 +43,28 @@ public interface RunPageHandle extends AutoCloseable {
      */
     ExtractionPreview.DomState acquireDomState();
 
+    /**
+     * 等待选择器可见后点击（M5-2 / spec §D5：翻页 / 加载更多元素触发）。
+     *
+     * <p>超时未出现视为"元素已消失"（列表翻到最后一页的常规终止信号），
+     * 不抛异常，由调用方按 {@link ClickResult} 分支处理。
+     *
+     * @param selector 翻页 / 加载更多元素选择器
+     * @param timeoutMs 等待元素出现的超时毫秒
+     * @return 点击结果
+     */
+    ClickResult click(String selector, long timeoutMs);
+
+    /** 点击结果（spec §D5 ClickResult 的 M5-2 骨架子集；DISABLED / DISAPPEARED 细分留 (c)）。 */
+    enum ClickResult {
+        /** 元素可见且点击成功。 */
+        CLICKED,
+        /** 超时内未出现（视为最后一页 / 翻页终止）。 */
+        NOT_FOUND,
+        /** 元素出现但点击失败（拦截 / 遮挡 / lane 异常）。 */
+        FAILED
+    }
+
     /** 关闭 BrowserContext 与 Page；运行结束后由 dispatcher / executor 在 finally 块调用。 */
     @Override
     void close();

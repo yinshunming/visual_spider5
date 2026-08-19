@@ -178,18 +178,19 @@ class RunDispatcherTest {
     }
 
     @Test
-    @DisplayName("dispatcher 按 task.mode 路由：LIST -> list executor，SINGLE_PAGE -> single executor")
+    @DisplayName("dispatcher 按 task.mode 路由：LIST -> multiPage executor，SINGLE_PAGE -> single executor")
     void routesByMode() {
         RecordingExecutor single = new RecordingExecutor();
-        RecordingExecutor list = new RecordingExecutor();
-        RunDispatcher routingDispatcher = new RunDispatcher(lanePool, repository, single, list, pageHandleProvider);
+        RecordingExecutor multi = new RecordingExecutor();
+        // 5 参构造：(lanePool, repository, singlePage, multiPage, provider) — M5-2 #40 把 LIST 路由从 listRunExecutor 切到 multiPageRunExecutor
+        RunDispatcher routingDispatcher = new RunDispatcher(lanePool, repository, single, multi, pageHandleProvider);
 
         repository.enqueueWaiting(701L, 1L, new TaskMode.List());
         repository.enqueueWaiting(702L, 1L, new TaskMode.SinglePage());
 
         routingDispatcher.dispatchOnceForTest();
 
-        assertThat(list.submittedRunIds).containsExactly(701L);
+        assertThat(multi.submittedRunIds).containsExactly(701L);
         assertThat(single.submittedRunIds).containsExactly(702L);
     }
 

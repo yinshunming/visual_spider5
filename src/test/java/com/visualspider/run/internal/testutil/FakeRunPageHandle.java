@@ -25,6 +25,8 @@ public class FakeRunPageHandle implements RunPageHandle {
     private final List<Boolean> waitQueue = new ArrayList<>();
     private final List<Long> waitTimeouts = new ArrayList<>();
     private final List<Integer> extraWaits = new ArrayList<>();
+    private final List<ClickResult> clickQueue = new ArrayList<>();
+    private final List<String> clickSelectors = new ArrayList<>();
     private int navigationCalls;
     private int waitCalls;
     private String currentUrl = "https://example.com/entry";
@@ -37,6 +39,10 @@ public class FakeRunPageHandle implements RunPageHandle {
 
     public void queueWaitForSelector(boolean found) {
         waitQueue.add(found);
+    }
+
+    public void queueClick(ClickResult result) {
+        clickQueue.add(result);
     }
 
     public void setDomState(ExtractionPreview.DomState state) {
@@ -65,6 +71,14 @@ public class FakeRunPageHandle implements RunPageHandle {
 
     public int waitCallCount() {
         return waitCalls;
+    }
+
+    public List<String> clickSelectors() {
+        return List.copyOf(clickSelectors);
+    }
+
+    public int clickCallCount() {
+        return clickSelectors.size();
     }
 
     public boolean closed() {
@@ -103,6 +117,15 @@ public class FakeRunPageHandle implements RunPageHandle {
     @Override
     public ExtractionPreview.DomState acquireDomState() {
         return domState == null ? new TestDomState(currentUrl, List.of()) : domState;
+    }
+
+    @Override
+    public ClickResult click(String selector, long timeoutMs) {
+        clickSelectors.add(selector);
+        if (clickQueue.isEmpty()) {
+            return ClickResult.NOT_FOUND;
+        }
+        return clickQueue.remove(0);
     }
 
     @Override

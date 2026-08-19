@@ -1,6 +1,8 @@
 package com.visualspider.run.internal;
 
+import com.visualspider.extraction.spi.ExtractionPreview;
 import com.visualspider.identity.spi.IdentityAccess;
+import com.visualspider.result.spi.RunResultSink;
 import com.visualspider.run.spi.RunCoordinator;
 import com.visualspider.run.spi.RunExecutor;
 import com.visualspider.run.spi.RunRecovery;
@@ -9,6 +11,7 @@ import com.visualspider.task.spi.TaskReadiness;
 import com.visualspider.task.spi.TaskSnapshotFactory;
 import com.visualspider.visualbrowser.BrowserLane;
 import com.visualspider.visualbrowser.spi.LanePool;
+import com.visualspider.visualbrowser.spi.TargetUrlPolicy;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.ApplicationRunner;
 import org.springframework.context.annotation.Bean;
@@ -96,10 +99,27 @@ public class RunModuleConfig {
                                        RunRepository repository,
                                        @org.springframework.beans.factory.annotation.Qualifier("singlePageRunExecutor")
                                                RunExecutor singlePageExecutor,
-                                       @org.springframework.beans.factory.annotation.Qualifier("listRunExecutor")
-                                               RunExecutor listExecutor,
+                                       @org.springframework.beans.factory.annotation.Qualifier("multiPageRunExecutor")
+                                               RunExecutor multiPageExecutor,
                                        RunPageHandleProvider pageHandleProvider) {
-        return new RunDispatcher(runLanePool, repository, singlePageExecutor, listExecutor, pageHandleProvider);
+        return new RunDispatcher(runLanePool, repository, singlePageExecutor,
+                multiPageExecutor, pageHandleProvider);
+    }
+
+    /**
+     * LIST 模式任务的执行器（M5-2 / issue #40）：dispatcher 路由到本 bean；
+     * {@code paginationRule == null} 时退化为"只跑当前页"（等价 M4 ListRunExecutor）。
+     * 完整翻页 / 加载更多 / 重复页保护 / 限速 / 停止检测由后续 (c)(d)(e) 叠加，
+     * 本 bean 仅提供可挂载的最小骨架。
+     */
+    @Bean
+    @org.springframework.beans.factory.annotation.Qualifier("multiPageRunExecutor")
+    public RunExecutor multiPageRunExecutor(RunRepository repository,
+                                            RunResultSink resultSink,
+                                            ExtractionPreview extraction,
+                                            TargetUrlPolicy urlPolicy,
+                                            com.visualspider.result.internal.UniqueKeyHasher hasher) {
+        return new MultiPageRunExecutor(repository, resultSink, extraction, urlPolicy, hasher);
     }
 
     /**

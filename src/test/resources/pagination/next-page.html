@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Pagination next-page fixture (M5-2)</title>
+</head>
+<body>
+<h1>Top items (paginated)</h1>
+<table>
+  <tbody id="rows"></tbody>
+</table>
+<nav>
+  <!-- JS removes this element on page 2 to simulate the natural end-of-list signal. -->
+  <a id="next" class="next" href="?page=2">下一页</a>
+</nav>
+<script>
+  (function () {
+    var params = new URLSearchParams(location.search);
+    var page = parseInt(params.get('page') || '1', 10);
+    // 两页 × 5 行；M5-2 happy-path IT 期望 raw=10/dedup=0/final=10。
+    var titles = {
+      1: ['Alpha', 'Beta', 'Gamma', 'Delta', 'Epsilon'],
+      2: ['Zeta', 'Eta', 'Theta', 'Iota', 'Kappa']
+    };
+    var items = titles[page] || titles[1];
+    var rows = document.getElementById('rows');
+    items.forEach(function (t, i) {
+      var n = (page - 1) * 5 + i + 1;
+      var tr = document.createElement('tr');
+      tr.innerHTML =
+        '<td><a class="title" href="/items/' + n + '">' + t + '</a></td>' +
+        '<td><span class="date">2024-02-0' + (i + 1) + '</span></td>' +
+        '<td class="count">' + (n * 10) + '</td>';
+      rows.appendChild(tr);
+    });
+    if (page >= 2) {
+      var next = document.getElementById('next');
+      if (next && next.parentNode) next.parentNode.removeChild(next);
+    }
+  })();
+</script>
+</body>
+</html>

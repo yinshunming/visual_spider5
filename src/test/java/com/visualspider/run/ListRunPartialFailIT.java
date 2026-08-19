@@ -273,6 +273,12 @@ class ListRunPartialFailIT {
         }
 
         @Override
+        public ClickResult click(String selector, long timeoutMs) {
+            // 本 IT 任务无 paginationRule（V2 形状），click 不会被调用；兜底 NOT_FOUND
+            return ClickResult.NOT_FOUND;
+        }
+
+        @Override
         public ExtractionPreview.DomState acquireDomState() {
             return new ExtractionPreview.DomState() {
                 @Override

@@ -51,7 +51,7 @@ public class RunDispatcher {
     private final LanePool lanePool;
     private final RunRepository repository;
     private final RunExecutor singlePageExecutor;
-    private final RunExecutor listExecutor;
+    private final RunExecutor multiPageExecutor;
     private final RunPageHandleProvider pageHandleProvider;
 
     private volatile boolean started;
@@ -63,13 +63,13 @@ public class RunDispatcher {
             RunRepository repository,
             @org.springframework.beans.factory.annotation.Qualifier("singlePageRunExecutor")
                     RunExecutor singlePageExecutor,
-            @org.springframework.beans.factory.annotation.Qualifier("listRunExecutor")
-                    RunExecutor listExecutor,
+            @org.springframework.beans.factory.annotation.Qualifier("multiPageRunExecutor")
+                    RunExecutor multiPageExecutor,
             RunPageHandleProvider pageHandleProvider) {
         this.lanePool = runLanePool;
         this.repository = repository;
         this.singlePageExecutor = singlePageExecutor;
-        this.listExecutor = listExecutor;
+        this.multiPageExecutor = multiPageExecutor;
         this.pageHandleProvider = pageHandleProvider == null
                 ? new RunPageHandleProvider() {
                     @Override
@@ -82,7 +82,7 @@ public class RunDispatcher {
     }
 
     /**
-     * 兼容 M3-2 单元测试 / 旧调用点：单 executor 路由所有 mode（M3 行为；list executor 同对象）。
+     * 兼容 M3-2 单元测试 / 旧调用点：单 executor 路由所有 mode（M3 行为；list / multi 复用同对象）。
      * 生产装配走 5 参构造按 {@code task.mode} 分发（spec §D15）。
      */
     public RunDispatcher(
@@ -198,8 +198,10 @@ public class RunDispatcher {
                 MAX_RECORDS,
                 pageHandle);
         // 模式路由（spec §D15）：claim 后读 snapshot.mode 选 executor，不引入 Router。
+        // LIST 一律走 multiPageExecutor（issue #40 / spec §D4 阶段1：隐式升级；
+        // paginationRule=null 时退化为"只跑当前页"，等价 M4 ListRunExecutor 行为）。
         RunExecutor exec = (rec.snapshot().definition().mode() instanceof TaskMode.List)
-                ? listExecutor : singlePageExecutor;
+                ? multiPageExecutor : singlePageExecutor;
         LeaseNotifier notifier = new LeaseNotifier(this);
         NotifyingLease notifying = new NotifyingLease(lease, notifier, "run-" + rec.runId());
         try {

@@ -310,6 +310,47 @@ public final class DefaultRunPageHandle implements RunPageHandle {
     }
 
     @Override
+    public ClickResult click(String selector, long timeoutMs) {
+        // 先等元素可见（超时 -> NOT_FOUND，最后一页的常规终止信号），再点击；
+        // 全程在 lane 线程执行，避免跨线程调用 Playwright 对象（ADR-0006）。
+        try {
+            return lane.submit(() -> {
+                try {
+                    page.waitForSelector(selector, new Page.WaitForSelectorOptions()
+                            .setTimeout(timeoutMs));
+                } catch (RuntimeException notFound) {
+                    return ClickResult.NOT_FOUND;
+                }
+                try {
+                    page.click(selector);
+                    // <a href> 翻页触发 navigation：Playwright click 默认不等 navigation，
+                    // 这里等 DOMContentLoaded 让新页面 DOM 就绪后调用方再 query，
+                    // 避免"在旧页面查询"或"navigation 未完成就超时"的竞态。
+                    // 已加载状态下 no-op（idempotent）；未来 LOAD_MORE 等不触发 navigation
+                    // 的 click 也不影响。
+                    try {
+                        page.waitForLoadState(
+                                com.microsoft.playwright.options.LoadState.DOMCONTENTLOADED,
+                                new Page.WaitForLoadStateOptions().setTimeout(15_000));
+                    } catch (RuntimeException loadEx) {
+                        // 等不到 navigation 完成（如 click 后 JS 拦截 preventDefault 且不切换 DOM）
+                        // 仍返回 CLICKED，由调用方自行判断终止条件
+                        LOG.warn("click post-load wait failed runId={} sel={}: {}",
+                                runId, selector, safeMsg(loadEx));
+                    }
+                    return ClickResult.CLICKED;
+                } catch (RuntimeException ex) {
+                    LOG.warn("click failed runId={} sel={}: {}", runId, selector, safeMsg(ex));
+                    return ClickResult.FAILED;
+                }
+            }).join();
+        } catch (RuntimeException ex) {
+            LOG.warn("click submit failed runId={} sel={}: {}", runId, selector, safeMsg(ex));
+            return ClickResult.FAILED;
+        }
+    }
+
+    @Override
     public void close() {
         if (closed) return;
         closed = true;
