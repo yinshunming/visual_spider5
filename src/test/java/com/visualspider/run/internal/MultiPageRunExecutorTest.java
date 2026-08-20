@@ -51,13 +51,14 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 /**
- * {@link MultiPageRunExecutor} 单元测试（M5-2 / issue #40 / spec §D4 阶段1）。
+ * {@link MultiPageRunExecutor} 单元测试（M5-2 / issue #40 / spec §D4；M5-3 叠加翻页循环）。
  *
  * <p>覆盖：
  * <ul>
  *   <li>{@code paginationRule == null} -> 退化为"只跑当前页"（等价 M4 ListRunExecutor）</li>
- *   <li>NEXT_PAGE：点击成功后处理下一页，元素消失（NOT_FOUND）后正常终止</li>
- *   <li>LOAD_MORE：阶段1未实现 -> 同样退化为"只跑当前页"（完整语义留 (c)）</li>
+ *   <li>NEXT_PAGE：点击成功 + URL/内容变化 -> 处理下一页，末页元素消失 -> 自然终止 COMPLETED</li>
+ *   <li>NEXT_PAGE：点击后 URL 未变 -> DUPLICATE_PAGE（M5-3 重复页保护）</li>
+ *   <li>LOAD_MORE：连续 2 次无新增 -> SUCCESS + PAGINATION_NO_NEW_ITEMS（M5-3）</li>
  *   <li>事件序列：LIST_PAGE_LOADED / PAGINATION_CLICKED + M4 逐 item 事件码</li>
  * </ul>
  */
@@ -74,6 +75,9 @@ class MultiPageRunExecutorTest {
 
     /** 共享 listItemRule 命中元素集（镜像 ListRunExecutorTest）。 */
     private final AtomicReference<List<Node>> domItems = new AtomicReference<>(List.of());
+
+    /** 当前 URL（M5-3 重复页保护需要可变 URL 模拟翻页）。 */
+    private final AtomicReference<String> urlRef = new AtomicReference<>("https://example.com/list");
 
     /** 收集 appendBatch 写入的事件 stage，供事件序列断言。 */
     private final List<String> eventStages = new ArrayList<>();
@@ -94,13 +98,23 @@ class MultiPageRunExecutorTest {
     }
 
     @Test
-    @DisplayName("NEXT_PAGE：第 1 次点击成功 -> 第 2 页，第 2 次元素消失 -> 终止；2 页事件齐全")
+    @DisplayName("NEXT_PAGE：第 1 次点击成功（URL/内容变化）-> 第 2 页，第 2 次元素消失 -> 终止；2 页事件齐全")
     void nextPageTwoPagesThenDisappear() {
         PaginationRule pagination = new PaginationRule(NavigationMode.NEXT_PAGE, "a.next");
         stubAllSuccess(3, pagination);
         stubRepositoryFinal(6, 0, pagination);
+        // 第 1 次点击翻到 page=2（URL + 内容都变化，避开 M5-3 重复页保护），第 2 次元素消失
         when(pageHandle.click(eq("a.next"), anyLong()))
-                .thenReturn(RunPageHandle.ClickResult.CLICKED)
+                .thenAnswer(inv -> {
+                    urlRef.set("https://example.com/list?page=2");
+                    List<Node> page2 = new ArrayList<>();
+                    for (int i = 0; i < 3; i++) {
+                        // textContent 必填且与 page1 不同（ContentHasher 只用 textContent 算 hash）
+                        page2.add(new Node("tr", "", "p2-" + i, "page2-item-" + i, java.util.Map.of()));
+                    }
+                    domItems.set(page2);
+                    return RunPageHandle.ClickResult.CLICKED;
+                })
                 .thenReturn(RunPageHandle.ClickResult.NOT_FOUND);
 
         newExecutor().execute(newCtx(), 11L);
@@ -114,16 +128,41 @@ class MultiPageRunExecutorTest {
     }
 
     @Test
-    @DisplayName("LOAD_MORE：阶段1未实现 -> 退化为只跑当前页（click 不被调用）")
-    void loadMoreDegradesToSinglePage() {
-        stubAllSuccess(3, new PaginationRule(NavigationMode.LOAD_MORE, "button.more"));
-        stubRepositoryFinal(3, 0);
+    @DisplayName("NEXT_PAGE：点击后 URL 未变 -> DUPLICATE_PAGE（M5-3 重复页保护，SUCCESS 状态保留）")
+    void nextPageDuplicateUrlStops() {
+        PaginationRule pagination = new PaginationRule(NavigationMode.NEXT_PAGE, "a.next");
+        stubAllSuccess(3, pagination);
+        stubRepositoryFinal(3, 0, pagination);
+        // 点击成功但 URL / 内容都不变（JS 状态机分页失效形态）
+        when(pageHandle.click(eq("a.next"), anyLong()))
+                .thenReturn(RunPageHandle.ClickResult.CLICKED);
 
         newExecutor().execute(newCtx(), 11L);
 
-        verify(pageHandle, never()).click(any(), anyLong());
         assertThat(eventStages.stream().filter("LIST_PAGE_LOADED"::equals)).hasSize(1);
-        verify(repository).markTerminal(eq(11L), eq(RunState.SUCCESS), eq(StopReason.COMPLETED));
+        assertThat(eventStages.stream().filter("DUPLICATE_PAGE"::equals)).hasSize(1);
+        verify(repository).markTerminal(eq(11L), eq(RunState.SUCCESS), eq(StopReason.DUPLICATE_PAGE));
+    }
+
+    @Test
+    @DisplayName("LOAD_MORE：连续 2 次点击无新增 -> SUCCESS + PAGINATION_NO_NEW_ITEMS（M5-3）")
+    void loadMoreNoNewItemsStopReason() {
+        PaginationRule pagination = new PaginationRule(NavigationMode.LOAD_MORE, "button.more");
+        stubAllSuccess(3, pagination);
+        stubRepositoryFinal(3, 0, pagination);
+        when(pageHandle.click(eq("button.more"), anyLong()))
+                .thenReturn(RunPageHandle.ClickResult.CLICKED)
+                .thenReturn(RunPageHandle.ClickResult.CLICKED)
+                .thenReturn(RunPageHandle.ClickResult.CLICKED);
+
+        newExecutor().execute(newCtx(), 11L);
+
+        // 2 次无新增点击不触发第 2 页回调；终态 SUCCESS + PAGINATION_NO_NEW_ITEMS
+        assertThat(eventStages.stream().filter("LIST_PAGE_LOADED"::equals)).hasSize(1);
+        assertThat(eventStages.stream().filter("PAGINATION_CLICKED"::equals)).hasSize(2);
+        assertThat(eventStages.stream().filter("LIST_ITEM_EXTRACTED"::equals)).hasSize(3);
+        verify(repository).markTerminal(eq(11L), eq(RunState.SUCCESS),
+                eq(StopReason.PAGINATION_NO_NEW_ITEMS));
     }
 
     @Test
@@ -154,20 +193,17 @@ class MultiPageRunExecutorTest {
         org.mockito.Mockito.doNothing().when(urlPolicy).validate(any());
         when(pageHandle.navigateAndAwaitDomContentLoaded(any()))
                 .thenReturn(new RunPageHandle.NavigationResult(true, 200, false, null));
-        when(pageHandle.currentUrl()).thenReturn("https://example.com/list");
+        when(pageHandle.currentUrl()).thenAnswer(inv -> urlRef.get());
         when(pageHandle.waitForSelector(any(), anyLong())).thenReturn(true);
-        // click 未显式 stub 时（nullPagination / LOAD_MORE 用例不会被调用）默认 NOT_FOUND；
-        // lenient 避免严格 stub 在 click 未走的用例上报 UnnecessaryStubbing。
-        org.mockito.Mockito.lenient()
-                .when(pageHandle.click(any(), anyLong()))
-                .thenReturn(RunPageHandle.ClickResult.NOT_FOUND);
+        // click 不设默认 stub：用例各自显式 stub 需要的行为。
+        // （click 未调用的用例不会触发 UnnecessaryStubbingError。）
         List<Node> items = new ArrayList<>();
         for (int i = 0; i < total; i++) {
             items.add(new Node("tr", "", "v-" + i, "", java.util.Map.of()));
         }
         domItems.set(items);
         DomState dom = new DomState() {
-            @Override public String url() { return "https://example.com/list"; }
+            @Override public String url() { return urlRef.get(); }
             @Override public List<Node> query(String sel, SelectorType t) { return domItems.get(); }
             @Override public DomState scopeToNode(Node item) { return this; }
         };

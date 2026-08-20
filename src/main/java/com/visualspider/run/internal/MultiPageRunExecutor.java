@@ -15,9 +15,6 @@ import com.visualspider.run.spi.RunExecutor;
 import com.visualspider.run.spi.RunPageHandle;
 import com.visualspider.run.spi.RunState;
 import com.visualspider.run.spi.StopReason;
-import com.visualspider.task.domain.NavigationMode;
-import com.visualspider.task.domain.PaginationRule;
-import com.visualspider.task.domain.SelectorType;
 import com.visualspider.task.domain.TaskDefinition;
 import com.visualspider.task.domain.TaskMode;
 import com.visualspider.task.domain.TaskSnapshot;
@@ -29,25 +26,21 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * 多页 List 运行执行器（M5-2 / issue #40 / spec §D4 阶段1骨架）。
+ * 多页 List 运行执行器（M5-2 / issue #40 / spec §D4；M5-3 / issue #41 叠加完整翻页循环）。
  *
  * <p>镜像 {@link ListRunExecutor} 的单页处理路径（M4 spec §D8：导航入口 ->
  * waitForSelector -> per-item scopeToNode + preview -> writeOneRecord -> sink 实时去重
- * -> 计数累加），叠加最小翻页循环：{@code paginationRule} 为 {@code null} 或非
- * NEXT_PAGE 时退化为"只跑当前页"（等价 M4 行为，隐式升级）。
+ * -> 计数累加），翻页 / 加载更多 / 重复页保护 / 无新增判定委托
+ * {@link PagingExecutor}（M5-3 / spec §D5）：{@code paginationRule == null} 时只跑
+ * 当前页（等价 M4 行为，隐式升级）。
  *
- * <p>阶段1边界（issue #40）：
- * <ul>
- *   <li>NEXT_PAGE：点击翻页元素后等 list-item 选择器就绪即处理下一页；
- *       元素消失（NOT_FOUND）视为翻完，正常 COMPLETED。</li>
- *   <li>重复页保护 / 无新增判定 / LOAD_MORE / PAGINATION_* StopReason 细分
- *       留 (c) {@code PagingExecutor}（spec §D5）；本类只保留可挂载骨架。</li>
- *   <li>事件沿用 M4 逐 item 事件码（LIST_ITER_START / LIST_ITEM_*），叠加
- *       LIST_PAGE_LOADED / PAGINATION_CLICKED（spec §D17）。</li>
- * </ul>
+ * <p>事件沿用 M4 逐 item 事件码（LIST_ITER_START / LIST_ITEM_*），叠加
+ * LIST_PAGE_LOADED / PAGINATION_CLICKED / PAGINATION_STOPPED / DUPLICATE_PAGE
+ * （spec §D17；翻页事件由 {@link PagingExecutor} 发）。
  *
  * <p>终态（与 {@link ListRunExecutor} 一致，spec §D7）：
- * {@code final>0 && fail>0} -> PARTIAL_SUCCESS。
+ * {@code final>0 && fail>0} -> PARTIAL_SUCCESS；翻页主动停止
+ * （DUPLICATE_PAGE / PAGINATION_*）在 SUCCESS 终态下作为 stop_reason 记录。
  */
 public class MultiPageRunExecutor implements RunExecutor {
 
@@ -55,25 +48,35 @@ public class MultiPageRunExecutor implements RunExecutor {
 
     /** list-item 就绪等待（与 M4 ListRunExecutor 一致：默认 15s）。 */
     private static final long LIST_ITEM_WAIT_MS = 15_000L;
-    /** 翻页元素等待：最后一页元素消失时等满该超时即判定 NOT_FOUND。 */
-    private static final long PAGINATION_WAIT_MS = 5_000L;
 
     private final RunRepository repository;
     private final RunResultSink resultSink;
     private final ExtractionPreview preview;
     private final TargetUrlPolicy urlPolicy;
     private final UniqueKeyHasher hasher;
+    private final PagingExecutor pagingExecutor;
 
     public MultiPageRunExecutor(RunRepository repository,
                                 RunResultSink resultSink,
                                 ExtractionPreview preview,
                                 TargetUrlPolicy urlPolicy,
                                 UniqueKeyHasher hasher) {
+        this(repository, resultSink, preview, urlPolicy, hasher,
+                new PagingExecutor(resultSink));
+    }
+
+    public MultiPageRunExecutor(RunRepository repository,
+                                RunResultSink resultSink,
+                                ExtractionPreview preview,
+                                TargetUrlPolicy urlPolicy,
+                                UniqueKeyHasher hasher,
+                                PagingExecutor pagingExecutor) {
         this.repository = repository;
         this.resultSink = resultSink;
         this.preview = preview;
         this.urlPolicy = urlPolicy;
         this.hasher = hasher;
+        this.pagingExecutor = pagingExecutor;
     }
 
     @Override
@@ -138,89 +141,66 @@ public class MultiPageRunExecutor implements RunExecutor {
             page.extraWaitSeconds(def.waitPolicy().extraWaitSeconds());
         }
 
-        int pageNo = 0;
         int sequenceNo = 0;  // 跨页连续（run_result UNIQUE(run_id, sequence_no)）
-        while (true) {
-            pageNo++;
-            // 同一 DomState 实例先 query(listItemRule) 再 scopeToNode：
-            // DefaultRunPageHandle 的 scopeToNode 按"最近一次 query 结果"定位 item，
-            // 重新 acquire 会丢失该上下文导致 item 作用域退化。
-            DomState dom = page.acquireDomState();
-            List<Node> items = queryItems(runId, def, dom);
-            if (items == null) {
-                return;  // query 失败已写终态
+        PagingExecutor.LoopStop stop = pagingExecutor.runPages(def, page, context, runId,
+                (pageNo, skipFirstN, dom, items) ->
+                        processListPage(runId, context, def, page,
+                                pageNo, skipFirstN, dom, items, new int[]{sequenceNo}));
+        if (stop.kind() == PagingExecutor.LoopStop.Kind.ABORTED) {
+            if (stop.reason() != null) {
+                // 翻页后 list-item 消失等需要 FAILED 终态的路径（processor 内已写终态时 reason == null）
+                tryEmitTerminal(runId, RunState.FAILED, stop.reason(), stop.message());
             }
-            emitEvent(runId, RunEventLevel.INFO, "LIST_PAGE_LOADED", page.currentUrl(),
-                    "page=" + pageNo + " items=" + items.size());
-            // M4 逐 item 事件码沿用（ListRunIT 回归依赖）
-            emitEvent(runId, RunEventLevel.INFO, "LIST_ITER_START", page.currentUrl(),
-                    "items=" + items.size());
-            for (Node item : items) {
-                if (context.isCancelRequested() || context.recordLimitExceeded()
-                        || context.pageLimitExceeded()
-                        || context.timeLimitExceeded(System.currentTimeMillis())) {
-                    break;
-                }
-                DomState scoped;
-                try {
-                    scoped = dom.scopeToNode(item);
-                } catch (UnsupportedOperationException noScope) {
-                    scoped = dom;
-                }
-                PreviewResult pr = preview.preview(def, scoped);
-                context.incrementPageCount();
-                int seq = ++sequenceNo;
-                BatchOutcome outcome = writeOneRecord(runId, pr, def, seq,
-                        page.currentUrl());
-                if (outcome.failedCount() > 0) {
-                    emitEvent(runId, RunEventLevel.WARN, "LIST_ITEM_FAILED", page.currentUrl(),
-                            "seq=" + seq);
-                } else if (outcome.dedupCount() > 0) {
-                    emitEvent(runId, RunEventLevel.INFO, "LIST_ITEM_DEDUPED", page.currentUrl(),
-                            "seq=" + seq);
-                } else if (outcome.insertedCount() > 0) {
-                    emitEvent(runId, RunEventLevel.INFO, "LIST_ITEM_EXTRACTED", page.currentUrl(),
-                            "seq=" + seq);
-                }
-            }
+            return;
+        }
+        computeTerminal(context, runId, def, stop.reason());
+    }
 
-            // 翻页判定：null / LOAD_MORE -> 只跑当前页（LOAD_MORE 完整语义留 (c) PagingExecutor）
-            PaginationRule pagination = def.paginationRule();
-            if (pagination == null || pagination.mode() != NavigationMode.NEXT_PAGE) {
-                break;
-            }
+    /**
+     * 单张 list 页处理（M5-3 起由 {@link PagingExecutor} 回调）：
+     * 每 item scopeToNode + preview -> writeOneRecord -> sink 实时去重。
+     *
+     * <p>LOAD_MORE 追加式列表由 {@code skipFirstN} 跳过已处理前缀，只处理新增 item。
+     * {@code sequenceRef} 为单元素数组，跨页保持 sequence 连续（lambda 捕获语义）。
+     */
+    private boolean processListPage(long runId, RunExecutionContext context, TaskDefinition def,
+                                    RunPageHandle page, int pageNo, int skipFirstN,
+                                    DomState dom, List<Node> items, int[] sequenceRef) {
+        emitEvent(runId, RunEventLevel.INFO, "LIST_PAGE_LOADED", page.currentUrl(),
+                "page=" + pageNo + " items=" + items.size());
+        // M4 逐 item 事件码沿用（ListRunIT 回归依赖）
+        emitEvent(runId, RunEventLevel.INFO, "LIST_ITER_START", page.currentUrl(),
+                "items=" + items.size());
+        for (int i = skipFirstN; i < items.size(); i++) {
+            Node item = items.get(i);
             if (context.isCancelRequested() || context.recordLimitExceeded()
                     || context.pageLimitExceeded()
                     || context.timeLimitExceeded(System.currentTimeMillis())) {
                 break;
             }
-            RunPageHandle.ClickResult click =
-                    page.click(pagination.selector(), PAGINATION_WAIT_MS);
-            if (click != RunPageHandle.ClickResult.CLICKED) {
-                // NOT_FOUND（最后一页元素消失）/ FAILED -> 终止；StopReason 细分留 (c)
-                break;
+            DomState scoped;
+            try {
+                scoped = dom.scopeToNode(item);
+            } catch (UnsupportedOperationException noScope) {
+                scoped = dom;
             }
-            emitEvent(runId, RunEventLevel.INFO, "PAGINATION_CLICKED", page.currentUrl(),
-                    "mode=NEXT_PAGE page=" + pageNo);
-            if (!page.waitForSelector(def.listItemRule().selector(), LIST_ITEM_WAIT_MS)) {
-                tryEmitTerminal(runId, RunState.FAILED, StopReason.ENTRY_FAILED,
-                        "list-item selector not found after pagination");
-                return;
+            PreviewResult pr = preview.preview(def, scoped);
+            context.incrementPageCount();
+            int seq = ++sequenceRef[0];
+            BatchOutcome outcome = writeOneRecord(runId, pr, def, seq,
+                    page.currentUrl());
+            if (outcome.failedCount() > 0) {
+                emitEvent(runId, RunEventLevel.WARN, "LIST_ITEM_FAILED", page.currentUrl(),
+                        "seq=" + seq);
+            } else if (outcome.dedupCount() > 0) {
+                emitEvent(runId, RunEventLevel.INFO, "LIST_ITEM_DEDUPED", page.currentUrl(),
+                        "seq=" + seq);
+            } else if (outcome.insertedCount() > 0) {
+                emitEvent(runId, RunEventLevel.INFO, "LIST_ITEM_EXTRACTED", page.currentUrl(),
+                        "seq=" + seq);
             }
         }
-        computeTerminal(context, runId, def);
-    }
-
-    private List<Node> queryItems(long runId, TaskDefinition def, DomState dom) {
-        SelectorType itemType = def.listItemRule().selectorType() == null
-                ? SelectorType.CSS : def.listItemRule().selectorType();
-        try {
-            return dom.query(def.listItemRule().selector(), itemType);
-        } catch (RuntimeException ex) {
-            tryEmitTerminal(runId, RunState.FAILED, StopReason.ENTRY_FAILED,
-                    "listItemRule query failed: " + safeMessage(ex));
-            return null;
-        }
+        return true;
     }
 
     private BatchOutcome writeOneRecord(long runId, PreviewResult pr, TaskDefinition def,
@@ -250,7 +230,7 @@ public class MultiPageRunExecutor implements RunExecutor {
     }
 
     private void computeTerminal(RunExecutionContext context, long runId,
-                                  TaskDefinition def) {
+                                  TaskDefinition def, StopReason paginationStop) {
         RunRepository.RunRecord rec = repository.findById(runId).orElse(null);
         if (rec == null) {
             return;
@@ -276,6 +256,11 @@ public class MultiPageRunExecutor implements RunExecutor {
         if (context.pageLimitExceeded()) reason = StopReason.PAGE_LIMIT;
         if (context.recordLimitExceeded()) reason = StopReason.RECORD_LIMIT;
         if (context.timeLimitExceeded(System.currentTimeMillis())) reason = StopReason.TIME_LIMIT;
+        // M5-3（spec §D5）：翻页主动停止（DUPLICATE_PAGE / PAGINATION_*）优先于 COMPLETED，
+        // 但不影响 SUCCESS / PARTIAL_SUCCESS 状态本身与取消 / 达限判定。
+        if (paginationStop != null && state == RunState.SUCCESS) {
+            reason = paginationStop;
+        }
 
         tryEmitTerminal(runId, state, reason,
                 "final=" + finalCount + " fail=" + failCount);

@@ -37,5 +37,13 @@ public enum StopReason {
     /** 验证码停止。 */
     CAPTCHA,
     /** 启动恢复标记。 */
-    APP_INTERRUPTED
+    APP_INTERRUPTED,
+    /** 翻页/加载更多元素在当前页已消失（M5 spec §D5 / §D16）。 */
+    PAGINATION_DISAPPEARED,
+    /** 翻页/加载更多元素当前不可点击（disabled，M5 spec §D5 / §D16）。 */
+    PAGINATION_DISABLED,
+    /** 加载更多连续 2 次无新增 list-item（M5 spec §D5 / §D16）。 */
+    PAGINATION_NO_NEW_ITEMS,
+    /** NEXT_PAGE 模式 URL 或 list-item 内容 hash 与已访问页重复（M5 spec §D5 / §D16）。 */
+    DUPLICATE_PAGE
 }

@@ -55,13 +55,15 @@ public interface RunPageHandle extends AutoCloseable {
      */
     ClickResult click(String selector, long timeoutMs);
 
-    /** 点击结果（spec §D5 ClickResult 的 M5-2 骨架子集；DISABLED / DISAPPEARED 细分留 (c)）。 */
+    /** 点击结果（M5-3 / spec §D5：DISAPPEARED / DISABLED 细分）。 */
     enum ClickResult {
         /** 元素可见且点击成功。 */
         CLICKED,
         /** 超时内未出现（视为最后一页 / 翻页终止）。 */
         NOT_FOUND,
-        /** 元素出现但点击失败（拦截 / 遮挡 / lane 异常）。 */
+        /** 元素出现但 disabled / aria-disabled，不可点击（M5-3）。 */
+        DISABLED,
+        /** 元素出现且可点击但点击失败（拦截 / 遮挡 / lane 异常）。 */
         FAILED
     }
 

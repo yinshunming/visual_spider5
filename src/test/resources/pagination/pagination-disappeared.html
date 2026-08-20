@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Pagination-disappeared fixture (M5-3)</title>
+</head>
+<body>
+<h1>Items (load more, button disappears)</h1>
+<table>
+  <tbody id="rows"></tbody>
+</table>
+<button id="more" class="more" type="button">加载更多</button>
+<script>
+  (function () {
+    // 首次 5 项；点击 1 次追加 3 项（共 8）后按钮被移除：
+    // 测 LOAD_MORE 元素消失 -> PAGINATION_DISAPPEARED。
+    var total = 5;
+    var rows = document.getElementById('rows');
+    function addItem(n) {
+      var tr = document.createElement('tr');
+      var d = '0' + n;
+      tr.innerHTML =
+        '<td><a class="title" href="/items/' + n + '">Item ' + n + '</a></td>' +
+        '<td><span class="date">2024-06-' + d + '</span></td>' +
+        '<td class="count">' + (n * 10) + '</td>';
+      rows.appendChild(tr);
+    }
+    for (var i = 1; i <= total; i++) addItem(i);
+    document.getElementById('more').addEventListener('click', function () {
+      for (var j = total + 1; j <= total + 3; j++) addItem(j);
+      total = total + 3;
+      var btn = document.getElementById('more');
+      if (btn && btn.parentNode) btn.parentNode.removeChild(btn);
+    });
+  })();
+</script>
+</body>
+</html>

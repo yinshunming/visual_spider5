@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Duplicate-page fixture (M5-3)</title>
+</head>
+<body>
+<h1>Top items (paginated, duplicated content)</h1>
+<table>
+  <tbody id="rows"></tbody>
+</table>
+<nav>
+  <a id="next" class="next" href="?page=2">下一页</a>
+</nav>
+<script>
+  (function () {
+    // 3 页 × 5 行，但第 2 页渲染与第 1 页完全相同的行（URL 变、内容同）：
+    // 测 NEXT_PAGE 重复页保护的 contentHash 比对 -> DUPLICATE_PAGE。
+    var params = new URLSearchParams(location.search);
+    var page = parseInt(params.get('page') || '1', 10);
+    var titles = {
+      1: ['Alpha', 'Beta', 'Gamma', 'Delta', 'Epsilon'],
+      2: ['Alpha', 'Beta', 'Gamma', 'Delta', 'Epsilon'],  // 与第 1 页完全一致
+      3: ['Zeta', 'Eta', 'Theta', 'Iota', 'Kappa']
+    };
+    var items = titles[page] || titles[1];
+    var rows = document.getElementById('rows');
+    items.forEach(function (t, i) {
+      var n = i + 1;  // href / count 也与第 1 页一致，保证 contentHash 完全相同
+      var tr = document.createElement('tr');
+      tr.innerHTML =
+        '<td><a class="title" href="/items/' + n + '">' + t + '</a></td>' +
+        '<td><span class="date">2024-05-0' + (i + 1) + '</span></td>' +
+        '<td class="count">' + (n * 10) + '</td>';
+      rows.appendChild(tr);
+    });
+    // 第 3 页移除 next（本 fixture 预期在第 2 页即触发 DUPLICATE_PAGE，不会到达第 3 页）
+    if (page >= 3) {
+      var next = document.getElementById('next');
+      if (next && next.parentNode) next.parentNode.removeChild(next);
+    }
+  })();
+</script>
+</body>
+</html>

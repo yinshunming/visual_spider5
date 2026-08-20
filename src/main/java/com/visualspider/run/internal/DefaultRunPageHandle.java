@@ -321,6 +321,18 @@ public final class DefaultRunPageHandle implements RunPageHandle {
                 } catch (RuntimeException notFound) {
                     return ClickResult.NOT_FOUND;
                 }
+                // M5-3 / spec §D5：元素存在但 disabled / aria-disabled -> DISABLED
+                // （翻页到末页时按钮置灰的常见形态，不点击直接回报调用方细分停止）。
+                try {
+                    Object disabled = page.evalOnSelector(selector,
+                            "el => el.disabled === true || el.getAttribute('aria-disabled') === 'true'");
+                    if (Boolean.TRUE.equals(disabled)) {
+                        return ClickResult.DISABLED;
+                    }
+                } catch (RuntimeException probeEx) {
+                    LOG.warn("disabled probe failed runId={} sel={}: {}",
+                            runId, selector, safeMsg(probeEx));
+                }
                 try {
                     page.click(selector);
                     // <a href> 翻页触发 navigation：Playwright click 默认不等 navigation，

@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Load-more fixture (M5-3)</title>
+</head>
+<body>
+<h1>Items (load more)</h1>
+<table>
+  <tbody id="rows"></tbody>
+</table>
+<button id="more" class="more" type="button">加载更多</button>
+<script>
+  (function () {
+    // 首次 5 项，每次点击 +3，3 次点击后封顶 14；继续点击无新增（测连续 2 次无新增判定）。
+    var total = 5;
+    var cap = 14;
+    var rows = document.getElementById('rows');
+    function addItem(n) {
+      var tr = document.createElement('tr');
+      var d = n < 10 ? '0' + n : '' + n;
+      tr.innerHTML =
+        '<td><a class="title" href="/items/' + n + '">Item ' + n + '</a></td>' +
+        '<td><span class="date">2024-03-' + d + '</span></td>' +
+        '<td class="count">' + (n * 10) + '</td>';
+      rows.appendChild(tr);
+    }
+    for (var i = 1; i <= total; i++) addItem(i);
+    document.getElementById('more').addEventListener('click', function () {
+      if (total >= cap) return;
+      var next = Math.min(total + 3, cap);
+      for (var j = total + 1; j <= next; j++) addItem(j);
+      total = next;
+    });
+  })();
+</script>
+</body>
+</html>
