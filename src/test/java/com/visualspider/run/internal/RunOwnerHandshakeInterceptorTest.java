@@ -101,7 +101,7 @@ class RunOwnerHandshakeInterceptorTest {
 
     private RunRepository.RunRecord runRecord(long runId, long ownerId) {
         return new RunRepository.RunRecord(runId, 1L, ownerId, com.visualspider.run.spi.RunState.RUNNING,
-                null, false, 0, 0, 0, null,
+                null, false, 0, 0, 0, 0, null,
                 java.time.OffsetDateTime.now(), java.time.OffsetDateTime.now(), null);
     }
 

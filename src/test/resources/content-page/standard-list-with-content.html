@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Standard list with content pages (M5-4)</title>
+</head>
+<body>
+<h1>Items (with content pages)</h1>
+<table>
+  <tbody id="rows"></tbody>
+</table>
+<script>
+  (function () {
+    // 5 list items；每项含一个内容页入口 <a href> 与 list 字段。
+    // 内容页走相对路径 /content-page/content/{n}.html（M5-4 IT HttpServer 以 content-page/ 为 root）。
+    var rows = document.getElementById('rows');
+    for (var i = 1; i <= 5; i++) {
+      var d = '0' + i;
+      var tr = document.createElement('tr');
+      tr.innerHTML =
+        '<td><a class="title" href="content/' + i + '.html">Item ' + i + '</a></td>' +
+        '<td><span class="date">2024-07-' + d + '</span></td>' +
+        '<td class="count">' + (i * 10) + '</td>';
+      rows.appendChild(tr);
+    }
+  })();
+</script>
+</body>
+</html>

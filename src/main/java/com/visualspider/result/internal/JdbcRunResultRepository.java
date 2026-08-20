@@ -123,16 +123,27 @@ public class JdbcRunResultRepository implements RunResultSink, RunResultQuery, R
                 LOG.warn("appendBatch events failed runId={}: {}", runId, safeMessage(ex));
             }
         }
-        // 累加 collection_run 计数（spec §D6）
+        // M5-4 / spec §D8：content_fail_count 由 sink 内部从 events 阶段名 CONTENT_PAGE_FAILED 计数，
+        // 累加到 collection_run；BatchOutcome 同步返回该值。appendBatch 接口签名不变（M4 调用点不破）。
+        int contentFail = 0;
+        if (events != null) {
+            for (RunEventInput e : events) {
+                if ("CONTENT_PAGE_FAILED".equals(e.stage())) {
+                    contentFail++;
+                }
+            }
+        }
+        // 累加 collection_run 计数（spec §D6 / §D8）
         jdbc.update(
                 "UPDATE collection_run "
                         + "SET record_count_raw = record_count_raw + ?, "
                         + "    record_count_dedup = record_count_dedup + ?, "
                         + "    record_count_final = record_count_final + ?, "
-                        + "    fail_count = fail_count + ? "
+                        + "    fail_count = fail_count + ?, "
+                        + "    content_fail_count = content_fail_count + ? "
                         + "WHERE id = ?",
-                raw, dedup, inserted, failed, runId);
-        return new BatchOutcome(raw, dedup, inserted, failed);
+                raw, dedup, inserted, failed, contentFail, runId);
+        return new BatchOutcome(raw, dedup, inserted, failed, contentFail);
     }
 
     /**

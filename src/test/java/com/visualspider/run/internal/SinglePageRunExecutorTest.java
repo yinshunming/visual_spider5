@@ -466,7 +466,7 @@ class SinglePageRunExecutorTest {
             TaskSnapshot snap = new TaskSnapshot(id, 1L, "demo", new TaskMode.SinglePage(),
                     1, 1L, def);
             byId.put(id, new RunRecord(id, id, 1L, RunState.RUNNING, null,
-                    false, 0, 0, 0, snap,
+                    false, 0, 0, 0, 0, snap,
                     OffsetDateTime.now(), OffsetDateTime.now(), null));
             return id;
         }
@@ -478,7 +478,7 @@ class SinglePageRunExecutorTest {
             TaskSnapshot snap = new TaskSnapshot(id, 1L, "demo", new TaskMode.SinglePage(),
                     1, 1L, def);
             byId.put(id, new RunRecord(id, id, 1L, RunState.RUNNING, null,
-                    false, 0, 0, 0, snap,
+                    false, 0, 0, 0, 0, snap,
                     OffsetDateTime.now(), OffsetDateTime.now(), null));
             return id;
         }

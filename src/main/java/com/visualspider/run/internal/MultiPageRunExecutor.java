@@ -4,17 +4,21 @@ import com.visualspider.extraction.spi.ExtractionPreview;
 import com.visualspider.extraction.spi.ExtractionPreview.DomState;
 import com.visualspider.extraction.spi.ExtractionPreview.Node;
 import com.visualspider.extraction.spi.PreviewResult;
+import com.visualspider.extraction.spi.PreviewResult.FieldOutcome;
 import com.visualspider.result.internal.UniqueKeyHasher;
 import com.visualspider.result.spi.BatchOutcome;
 import com.visualspider.result.spi.ResultRecord;
 import com.visualspider.result.spi.RunEventInput;
 import com.visualspider.result.spi.RunEventLevel;
 import com.visualspider.result.spi.RunResultSink;
+import com.visualspider.run.internal.ContentPageFetcher.ContentFetchResult;
 import com.visualspider.run.spi.RunExecutionContext;
 import com.visualspider.run.spi.RunExecutor;
 import com.visualspider.run.spi.RunPageHandle;
 import com.visualspider.run.spi.RunState;
 import com.visualspider.run.spi.StopReason;
+import com.visualspider.task.domain.FieldDefinition;
+import com.visualspider.task.domain.FieldKind;
 import com.visualspider.task.domain.TaskDefinition;
 import com.visualspider.task.domain.TaskMode;
 import com.visualspider.task.domain.TaskSnapshot;
@@ -55,6 +59,7 @@ public class MultiPageRunExecutor implements RunExecutor {
     private final TargetUrlPolicy urlPolicy;
     private final UniqueKeyHasher hasher;
     private final PagingExecutor pagingExecutor;
+    private final ContentPageFetcher contentFetcher;
 
     public MultiPageRunExecutor(RunRepository repository,
                                 RunResultSink resultSink,
@@ -62,7 +67,7 @@ public class MultiPageRunExecutor implements RunExecutor {
                                 TargetUrlPolicy urlPolicy,
                                 UniqueKeyHasher hasher) {
         this(repository, resultSink, preview, urlPolicy, hasher,
-                new PagingExecutor(resultSink));
+                new PagingExecutor(resultSink), new ContentPageFetcher(urlPolicy, preview));
     }
 
     public MultiPageRunExecutor(RunRepository repository,
@@ -70,13 +75,15 @@ public class MultiPageRunExecutor implements RunExecutor {
                                 ExtractionPreview preview,
                                 TargetUrlPolicy urlPolicy,
                                 UniqueKeyHasher hasher,
-                                PagingExecutor pagingExecutor) {
+                                PagingExecutor pagingExecutor,
+                                ContentPageFetcher contentFetcher) {
         this.repository = repository;
         this.resultSink = resultSink;
         this.preview = preview;
         this.urlPolicy = urlPolicy;
         this.hasher = hasher;
         this.pagingExecutor = pagingExecutor;
+        this.contentFetcher = contentFetcher;
     }
 
     @Override
@@ -171,6 +178,7 @@ public class MultiPageRunExecutor implements RunExecutor {
         // M4 逐 item 事件码沿用（ListRunIT 回归依赖）
         emitEvent(runId, RunEventLevel.INFO, "LIST_ITER_START", page.currentUrl(),
                 "items=" + items.size());
+        FieldDefinition linkField = findLinkField(def);  // fieldKind=LIST_CONTENT_LINK 字段（可空）
         for (int i = skipFirstN; i < items.size(); i++) {
             Node item = items.get(i);
             if (context.isCancelRequested() || context.recordLimitExceeded()
@@ -185,10 +193,33 @@ public class MultiPageRunExecutor implements RunExecutor {
                 scoped = dom;
             }
             PreviewResult pr = preview.preview(def, scoped);
+            // 提取 content-page-link URL（spec §D6：合并在 sink 之前）
+            String contentUrl = linkField == null ? null : findFieldValue(pr, linkField.name());
+            Map<String, String> contentFields = Map.of();
+            String contentErrorCode = null;
+            String contentErrorCause = null;
+            if (contentUrl != null && !contentUrl.isBlank()) {
+                ContentFetchResult res = contentFetcher.fetchWithRetry(page, def, contentUrl);
+                if (res.ok()) {
+                    contentFields = res.fields();
+                    emitEvent(runId, RunEventLevel.INFO, "CONTENT_PAGE_FETCHED",
+                            contentUrl, "seq=" + (sequenceRef[0] + 1));
+                } else {
+                    // 失败：list 字段保留 + content-link URL 仍写入 record；scope=CONTENT 字段全 null
+                    // （spec §D7 失败语义）；不阻塞 run、不影响 PARTIAL_SUCCESS 判定
+                    contentErrorCode = res.errorCode();
+                    contentErrorCause = res.cause();
+                    emitEvent(runId, RunEventLevel.WARN, "CONTENT_PAGE_FAILED",
+                            contentUrl, "cause=" + contentErrorCause
+                                    + " code=" + contentErrorCode);
+                    emitEvent(runId, RunEventLevel.WARN, "CONTENT_FIELDS_MISSING",
+                            contentUrl, "itemIndex=" + (sequenceRef[0] + 1));
+                }
+            }
             context.incrementPageCount();
             int seq = ++sequenceRef[0];
             BatchOutcome outcome = writeOneRecord(runId, pr, def, seq,
-                    page.currentUrl());
+                    page.currentUrl(), contentFields);
             if (outcome.failedCount() > 0) {
                 emitEvent(runId, RunEventLevel.WARN, "LIST_ITEM_FAILED", page.currentUrl(),
                         "seq=" + seq);
@@ -203,8 +234,34 @@ public class MultiPageRunExecutor implements RunExecutor {
         return true;
     }
 
+    /** 找任务定义中唯一的 LIST_CONTENT_LINK 字段（按 spec §D2：scope=LIST 强校验）。 */
+    private static FieldDefinition findLinkField(TaskDefinition def) {
+        FieldDefinition found = null;
+        for (FieldDefinition f : def.fields()) {
+            if (f.fieldKind() == FieldKind.LIST_CONTENT_LINK) {
+                if (found != null) {
+                    return null;  // 多匹配：M5 readiness 已拒，运行期不再处理
+                }
+                found = f;
+            }
+        }
+        return found;
+    }
+
+    /** 从 PreviewResult.fieldOutcomes 取指定字段名 cleanedValue（spec §D6：URL 即 cleanedValue）。 */
+    private static String findFieldValue(PreviewResult pr, String fieldName) {
+        if (pr == null) return null;
+        for (FieldOutcome o : pr.fieldOutcomes()) {
+            if (fieldName.equals(o.fieldName())) {
+                return o.cleanedValue();
+            }
+        }
+        return null;
+    }
+
     private BatchOutcome writeOneRecord(long runId, PreviewResult pr, TaskDefinition def,
-                                        int sequenceNo, String finalUrl) {
+                                        int sequenceNo, String finalUrl,
+                                        Map<String, String> contentFields) {
         // 缺字段 cleanedValue == null 时不入 data map，让 UniqueKeyHasher 走
         // "全/部分空键 -> null" 路径（与 M4 ListRunExecutor / UniqueKeyHasher 语义一致）。
         Map<String, String> data = new LinkedHashMap<>();
@@ -212,6 +269,15 @@ public class MultiPageRunExecutor implements RunExecutor {
             String value = out.cleanedValue();
             if (value != null) {
                 data.put(out.fieldName(), value);
+            }
+        }
+        // spec §D6 / §D7：content 字段按字段名合并到同一 record（list 字段优先，内容页字段覆盖同名）。
+        // 合并发生在 sink.appendBatch 之前，不影响 record_count_final 累加与 uniqueKey hash 语义。
+        if (contentFields != null && !contentFields.isEmpty()) {
+            for (Map.Entry<String, String> e : contentFields.entrySet()) {
+                if (e.getValue() != null) {
+                    data.put(e.getKey(), e.getValue());
+                }
             }
         }
         byte[] hash = null;

@@ -339,7 +339,7 @@ class RunCoordinatorImplTest {
         public long insertWaiting(long taskId, long ownerId, TaskSnapshot snapshot) {
             long id = seq++;
             RunRecord r = new RunRecord(id, taskId, ownerId, RunState.WAITING, null,
-                    false, 0, 0, 0, snapshot,
+                    false, 0, 0, 0, 0, snapshot,
                     OffsetDateTime.now(), null, null);
             byId.put(id, r);
             return id;
@@ -373,7 +373,7 @@ class RunCoordinatorImplTest {
                 return Optional.empty();
             }
             RunRecord flipped = new RunRecord(oldest.runId(), oldest.taskId(), oldest.ownerId(),
-                    RunState.RUNNING, null, false, 0, 0, 0,
+                    RunState.RUNNING, null, false, 0, 0, 0, 0,
                     oldest.snapshot(), oldest.createdAt(), OffsetDateTime.now(), null);
             byId.put(oldest.runId(), flipped);
             return Optional.of(flipped);
@@ -387,6 +387,7 @@ class RunCoordinatorImplTest {
             }
             byId.put(runId, new RunRecord(r.runId(), r.taskId(), r.ownerId(), r.status(),
                     r.stopReason(), true, r.pageCount(), r.recordCountFinal(), r.failCount(),
+                    r.contentFailCount(),
                     r.snapshot(), r.createdAt(), r.startedAt(), r.finishedAt()));
             return true;
         }
@@ -399,7 +400,7 @@ class RunCoordinatorImplTest {
             }
             byId.put(runId, new RunRecord(r.runId(), r.taskId(), r.ownerId(),
                     RunState.CANCELLED, StopReason.USER_CANCEL, r.cancelRequested(),
-                    r.pageCount(), r.recordCountFinal(), r.failCount(),
+                    r.pageCount(), r.recordCountFinal(), r.failCount(), r.contentFailCount(),
                     r.snapshot(), r.createdAt(), r.startedAt(), OffsetDateTime.now()));
             return 1;
         }
@@ -412,7 +413,7 @@ class RunCoordinatorImplTest {
             }
             byId.put(runId, new RunRecord(r.runId(), r.taskId(), r.ownerId(),
                     status, stopReason, r.cancelRequested(),
-                    r.pageCount(), r.recordCountFinal(), r.failCount(),
+                    r.pageCount(), r.recordCountFinal(), r.failCount(), r.contentFailCount(),
                     r.snapshot(), r.createdAt(), r.startedAt(), OffsetDateTime.now()));
             return true;
         }
@@ -425,7 +426,7 @@ class RunCoordinatorImplTest {
                 if (r.status() == RunState.WAITING || r.status() == RunState.RUNNING) {
                     byId.put(r.runId(), new RunRecord(r.runId(), r.taskId(), r.ownerId(),
                             RunState.INTERRUPTED, StopReason.APP_INTERRUPTED, r.cancelRequested(),
-                            r.pageCount(), r.recordCountFinal(), r.failCount(),
+                            r.pageCount(), r.recordCountFinal(), r.failCount(), r.contentFailCount(),
                             r.snapshot(), r.createdAt(), r.startedAt(), OffsetDateTime.now()));
                     n++;
                 }
@@ -441,7 +442,7 @@ class RunCoordinatorImplTest {
                     .sorted(java.util.Comparator.comparing(RunRepository.RunRecord::createdAt))
                     .map(r -> new RunSummary(r.runId(), r.taskId(), r.ownerId(), r.status(),
                             r.stopReason(), r.cancelRequested(), r.pageCount(),
-                            r.recordCountFinal(), r.failCount(),
+                            r.recordCountFinal(), r.failCount(), r.contentFailCount(),
                             r.createdAt(), r.startedAt(), r.finishedAt()))
                     .collect(java.util.stream.Collectors.toList());
         }
@@ -480,7 +481,7 @@ class RunCoordinatorImplTest {
             return Optional.of(new RunDetail(r.runId(), r.taskId(), r.ownerId(), r.status(),
                     r.stopReason(), r.cancelRequested(), r.pageCount(),
                     r.pageCount(), r.pageCount(), r.recordCountFinal(),
-                    r.failCount(), null, null,
+                    r.failCount(), r.contentFailCount(), null, null,
                     r.createdAt(), r.startedAt(), r.finishedAt(),
                     new RunDetail.TaskSnapshotMeta(s.name(), s.mode(), s.schemaVersion(),
                             s.version(), s.definition())));

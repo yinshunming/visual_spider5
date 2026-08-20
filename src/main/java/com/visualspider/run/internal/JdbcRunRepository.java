@@ -82,7 +82,7 @@ public class JdbcRunRepository implements RunRepository {
         try {
             return Optional.ofNullable(jdbc.queryForObject(
                     "SELECT id, task_id, owner_id, status, stop_reason, cancel_requested, "
-                            + "page_count, record_count_final, fail_count, snapshot, "
+                            + "page_count, record_count_final, fail_count, content_fail_count, snapshot, "
                             + "created_at, started_at, finished_at "
                             + "FROM collection_run WHERE id = ?",
                     recordMapper(), runId));
@@ -149,7 +149,7 @@ public class JdbcRunRepository implements RunRepository {
     public List<RunSummary> listByOwner(Long ownerId, RunFilter filter) {
         StringBuilder sql = new StringBuilder(
                 "SELECT id, task_id, owner_id, status, stop_reason, cancel_requested, "
-                        + "page_count, record_count_final, fail_count, "
+                        + "page_count, record_count_final, fail_count, content_fail_count, "
                         + "created_at, started_at, finished_at FROM collection_run ");
         List<Object> args = new ArrayList<>();
         if (ownerId != null) {
@@ -194,7 +194,7 @@ public class JdbcRunRepository implements RunRepository {
             return Optional.ofNullable(jdbc.queryForObject(
                     "SELECT id, task_id, owner_id, status, stop_reason, cancel_requested, "
                             + "page_count, record_count_raw, record_count_dedup, record_count_final, "
-                            + "fail_count, current_url, stage, "
+                            + "fail_count, content_fail_count, current_url, stage, "
                             + "created_at, started_at, finished_at, snapshot "
                             + "FROM collection_run WHERE id = ?",
                     detailMapper(), runId));
@@ -220,6 +220,7 @@ public class JdbcRunRepository implements RunRepository {
                         rs.getInt("page_count"),
                         rs.getInt("record_count_final"),
                         rs.getInt("fail_count"),
+                        rs.getInt("content_fail_count"),
                         snap,
                         toOffset(rs.getTimestamp("created_at")),
                         toOffset(rs.getTimestamp("started_at")),
@@ -241,6 +242,7 @@ public class JdbcRunRepository implements RunRepository {
                 rs.getInt("page_count"),
                 rs.getInt("record_count_final"),
                 rs.getInt("fail_count"),
+                rs.getInt("content_fail_count"),
                 toOffset(rs.getTimestamp("created_at")),
                 toOffset(rs.getTimestamp("started_at")),
                 toOffset(rs.getTimestamp("finished_at")));
@@ -276,6 +278,7 @@ public class JdbcRunRepository implements RunRepository {
                         rs.getInt("record_count_dedup"),
                         rs.getInt("record_count_final"),
                         rs.getInt("fail_count"),
+                        rs.getInt("content_fail_count"),
                         rs.getString("current_url"),
                         rs.getString("stage"),
                         toOffset(rs.getTimestamp("created_at")),

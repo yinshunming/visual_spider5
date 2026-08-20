@@ -95,7 +95,7 @@ class RunControllerTest {
         when(identityAccess.currentActor()).thenReturn(new ActorId(1L));
         when(coordinator.start(eq(7L), any(ActorId.class))).thenReturn(
                 new RunSummary(1L, 7L, 1L, RunState.WAITING,
-                        null, false, 0, 0, 0,
+                        null, false, 0, 0, 0, 0,
                         OffsetDateTime.now(), null, null));
 
         var resp = controller.start(new RunStartRequest(7L));
@@ -303,7 +303,7 @@ class RunControllerTest {
         TaskDefinition nullDef = null;
         RunDetail d = new RunDetail(7L, 1L, 1L, RunState.SUCCESS,
                 StopReason.COMPLETED, false,
-                0, 0, 0, 0, 0, null, null,
+                0, 0, 0, 0, 0, 0, null, null,
                 OffsetDateTime.now(), null, OffsetDateTime.now(),
                 new RunDetail.TaskSnapshotMeta("demo",
                         new TaskMode.SinglePage(), 1, 1L, nullDef));
@@ -337,7 +337,7 @@ class RunControllerTest {
     private RunSummary summ(long id) {
         return new RunSummary(id, 1L, 1L, RunState.SUCCESS,
                 StopReason.COMPLETED, false,
-                1, 1, 0,
+                1, 1, 0, 0,
                 OffsetDateTime.now(), OffsetDateTime.now(), OffsetDateTime.now());
     }
 
@@ -354,7 +354,7 @@ class RunControllerTest {
         return new RunDetail(runId, taskId, 1L, state,
                 state == RunState.SUCCESS ? StopReason.COMPLETED : null,
                 false,
-                1, 1, 1, 1, 0, "https://example.com/", "extract-success",
+                1, 1, 1, 1, 0, 0, "https://example.com/", "extract-success",
                 OffsetDateTime.now(), OffsetDateTime.now(), OffsetDateTime.now(),
                 new RunDetail.TaskSnapshotMeta("demo",
                         new TaskMode.SinglePage(), 1, 1L, def));

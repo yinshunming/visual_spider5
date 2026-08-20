@@ -212,7 +212,7 @@ class ListRunExecutorTest {
                 new RunRepository.RunRecord(
                         11L, 1L, 100L,
                         RunState.SUCCESS, StopReason.COMPLETED,
-                        false, 0, finalCount, failCount,
+                        false, 0, finalCount, failCount, 0,
                         listSnapshot(),
                         java.time.OffsetDateTime.now(), null, null)));
     }

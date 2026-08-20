@@ -44,6 +44,18 @@ public interface RunPageHandle extends AutoCloseable {
     ExtractionPreview.DomState acquireDomState();
 
     /**
+     * 在同一 {@code BrowserContext} 内打开独立 Page，导航到内容页 URL 并等
+     * {@code DOMContentLoaded}（M5-4 / spec §D6）。
+     *
+     * <p>list page 不受影响；调用方须用 try-with-resources 或 finally 关闭返回的
+     * {@link ContentPageHandle}，否则 BrowserContext 上累积未关闭 Page 会泄漏。
+     *
+     * @param contentUrl 内容页入口 URL（已通过 {@code TargetUrlPolicy.validate}）
+     * @return 新内容页句柄
+     */
+    ContentPageHandle openContentPageAndAwaitDomContentLoaded(String contentUrl);
+
+    /**
      * 等待选择器可见后点击（M5-2 / spec §D5：翻页 / 加载更多元素触发）。
      *
      * <p>超时未出现视为"元素已消失"（列表翻到最后一页的常规终止信号），

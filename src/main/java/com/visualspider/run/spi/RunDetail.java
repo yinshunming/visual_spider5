@@ -8,6 +8,8 @@ import java.time.OffsetDateTime;
  *
  * <p>M3 spec §D2：{@code GET /api/runs/{runId}} 响应；快照以 {@link TaskDefinition}
  * 形式呈现（{@code taskId} / {@code schemaVersion} / {@code name} / {@code mode} / {@code definition}）。
+ *
+ * <p>M5-4（spec §D8 / §D13）扩展 {@code contentFailCount}：内容页 navigate 失败计数。
  */
 public record RunDetail(
         long runId,
@@ -21,6 +23,7 @@ public record RunDetail(
         int recordCountDedup,
         int recordCountFinal,
         int failCount,
+        int contentFailCount,
         String currentUrl,
         String stage,
         OffsetDateTime createdAt,

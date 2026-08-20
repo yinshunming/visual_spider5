@@ -72,7 +72,7 @@ class RunProgressBroadcasterTest {
         return new RunRepository.RunRecord(
                 42L, 1L, 99L, state,
                 state == RunState.SUCCESS ? StopReason.COMPLETED : null,
-                false, page, finalCount, 0, null,
+                false, page, finalCount, 0, 0, null,
                 OffsetDateTime.now(), OffsetDateTime.now(),
                 state == RunState.SUCCESS ? OffsetDateTime.now() : null);
     }

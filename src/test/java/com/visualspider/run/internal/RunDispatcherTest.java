@@ -281,7 +281,7 @@ class RunDispatcherTest {
             TaskSnapshot snap = new TaskSnapshot(1L, ownerId, "demo", mode,
                     1, 1L, def);
             RunRecord r = new RunRecord(runId, 1L, ownerId, RunState.WAITING, null,
-                    false, 0, 0, 0, snap,
+                    false, 0, 0, 0, 0, snap,
                     java.time.OffsetDateTime.now(), null, null);
             waiting.add(r);
             return r;
@@ -295,7 +295,7 @@ class RunDispatcherTest {
             RunRecord r = waiting.poll();
             claimedIds.add(r.runId());
             return Optional.of(new RunRecord(r.runId(), r.taskId(), r.ownerId(),
-                    RunState.RUNNING, null, false, 0, 0, 0,
+                    RunState.RUNNING, null, false, 0, 0, 0, 0,
                     r.snapshot(), r.createdAt(), java.time.OffsetDateTime.now(), null));
         }
 

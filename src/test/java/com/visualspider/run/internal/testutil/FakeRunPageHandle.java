@@ -1,6 +1,7 @@
 package com.visualspider.run.internal.testutil;
 
 import com.visualspider.extraction.spi.ExtractionPreview;
+import com.visualspider.run.spi.ContentPageHandle;
 import com.visualspider.run.spi.RunPageHandle;
 import java.util.ArrayList;
 import java.util.List;
@@ -27,6 +28,8 @@ public class FakeRunPageHandle implements RunPageHandle {
     private final List<Integer> extraWaits = new ArrayList<>();
     private final List<ClickResult> clickQueue = new ArrayList<>();
     private final List<String> clickSelectors = new ArrayList<>();
+    /** 内容页打开队列（每次 openContentPageAndAwaitDomContentLoaded 取一个 fake handle）。 */
+    private final List<ContentPageHandle> contentHandles = new ArrayList<>();
     private int navigationCalls;
     private int waitCalls;
     private String currentUrl = "https://example.com/entry";
@@ -43,6 +46,11 @@ public class FakeRunPageHandle implements RunPageHandle {
 
     public void queueClick(ClickResult result) {
         clickQueue.add(result);
+    }
+
+    /** 设置下一次 openContentPageAndAwaitDomContentLoaded 返回的内容页句柄。 */
+    public void queueContentHandle(ContentPageHandle handle) {
+        contentHandles.add(handle);
     }
 
     public void setDomState(ExtractionPreview.DomState state) {
@@ -117,6 +125,14 @@ public class FakeRunPageHandle implements RunPageHandle {
     @Override
     public ExtractionPreview.DomState acquireDomState() {
         return domState == null ? new TestDomState(currentUrl, List.of()) : domState;
+    }
+
+    @Override
+    public ContentPageHandle openContentPageAndAwaitDomContentLoaded(String contentUrl) {
+        if (contentHandles.isEmpty()) {
+            return new FakeContentPageHandle(contentUrl);
+        }
+        return contentHandles.remove(0);
     }
 
     @Override

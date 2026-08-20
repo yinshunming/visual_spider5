@@ -189,7 +189,7 @@ public class RunCoordinatorImpl implements RunCoordinator {
     private RunSummary toSummary(RunRepository.RunRecord r) {
         return new RunSummary(r.runId(), r.taskId(), r.ownerId(), r.status(),
                 r.stopReason(), r.cancelRequested(), r.pageCount(),
-                r.recordCountFinal(), r.failCount(),
+                r.recordCountFinal(), r.failCount(), r.contentFailCount(),
                 r.createdAt(), r.startedAt(), r.finishedAt());
     }
 

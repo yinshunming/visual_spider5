@@ -5,6 +5,7 @@ import com.microsoft.playwright.Page;
 import com.microsoft.playwright.Response;
 import com.visualspider.extraction.spi.ExtractionPreview;
 import com.visualspider.extraction.spi.ExtractionPreview.DomState;
+import com.visualspider.run.spi.ContentPageHandle;
 import com.visualspider.run.spi.RunPageHandle;
 import com.visualspider.task.domain.SelectorType;
 import com.visualspider.visualbrowser.BrowserLane;
@@ -307,6 +308,32 @@ public final class DefaultRunPageHandle implements RunPageHandle {
             // CAPTCHA 探测失败不影响主流程
         }
         return false;
+    }
+
+    @Override
+    public ContentPageHandle openContentPageAndAwaitDomContentLoaded(String contentUrl) {
+        // M5-4 / spec §D6：在同一 BrowserContext 内打开独立 Page navigate 到内容页；
+        // 全程在 lane 线程执行，避免跨线程调用 Playwright 对象（ADR-0006）。
+        return lane.submit(() -> {
+            try {
+                com.microsoft.playwright.Page newPage = page.context().newPage();
+                try {
+                    newPage.navigate(contentUrl, new Page.NavigateOptions()
+                            .setWaitUntil(com.microsoft.playwright.options.WaitUntilState.DOMCONTENTLOADED)
+                            .setTimeout(15_000));
+                } catch (RuntimeException navEx) {
+                    // navigate 失败时关掉新 page 再抛，避免泄漏
+                    try {
+                        newPage.close();
+                    } catch (RuntimeException ignored) {
+                    }
+                    throw navEx;
+                }
+                return new DefaultContentPageHandle(lane, newPage);
+            } catch (RuntimeException ex) {
+                throw new RuntimeException("openContentPage failed: " + safeMsg(ex), ex);
+            }
+        }).join();
     }
 
     @Override

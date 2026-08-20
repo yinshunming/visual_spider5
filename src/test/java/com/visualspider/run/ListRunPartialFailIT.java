@@ -14,6 +14,7 @@ import com.visualspider.result.spi.RunEventInput;
 import com.visualspider.result.spi.RunResultSink;
 import com.visualspider.run.internal.JdbcRunRepository;
 import com.visualspider.run.internal.ListRunExecutor;
+import com.visualspider.run.spi.ContentPageHandle;
 import com.visualspider.run.spi.RunExecutionContext;
 import com.visualspider.run.spi.RunPageHandle;
 import com.visualspider.run.spi.RunState;
@@ -256,6 +257,12 @@ class ListRunPartialFailIT {
         @Override
         public NavigationResult navigateAndAwaitDomContentLoaded(String startUrl) {
             return new NavigationResult(true, 200, false, null);
+        }
+
+        @Override
+        public ContentPageHandle openContentPageAndAwaitDomContentLoaded(String contentUrl) {
+            // M5-4 / issue #42：单页/列表 fake 不实际打开内容页；返回关闭句柄即可。
+            return new com.visualspider.run.internal.testutil.FakeContentPageHandle(contentUrl);
         }
 
         @Override

@@ -107,7 +107,7 @@ class TestRunExecutorTest {
             TaskSnapshot snap = new TaskSnapshot(1L, ownerId, "demo", new TaskMode.SinglePage(),
                     1, 1L, def);
             RunRecord r = new RunRecord(id, taskId, ownerId, RunState.WAITING, null,
-                    false, 0, 0, 0, snap,
+                    false, 0, 0, 0, 0, snap,
                     java.time.OffsetDateTime.now(), null, null);
             byId.put(id, r);
             return id;

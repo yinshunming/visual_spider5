@@ -107,10 +107,8 @@ public class RunModuleConfig {
     }
 
     /**
-     * LIST 模式任务的执行器（M5-2 / issue #40）：dispatcher 路由到本 bean；
-     * {@code paginationRule == null} 时退化为"只跑当前页"（等价 M4 ListRunExecutor）。
-     * 完整翻页 / 加载更多 / 重复页保护 / 限速 / 停止检测由后续 (c)(d)(e) 叠加，
-     * 本 bean 仅提供可挂载的最小骨架。
+     * LIST 模式任务的执行器（M5-2 / issue #40；M5-3 / issue #41；M5-4 / issue #42）：
+     * dispatcher 路由到本 bean；{@code paginationRule == null} 时退化为"只跑当前页"。
      */
     @Bean
     @org.springframework.beans.factory.annotation.Qualifier("multiPageRunExecutor")
@@ -119,7 +117,9 @@ public class RunModuleConfig {
                                             ExtractionPreview extraction,
                                             TargetUrlPolicy urlPolicy,
                                             com.visualspider.result.internal.UniqueKeyHasher hasher) {
-        return new MultiPageRunExecutor(repository, resultSink, extraction, urlPolicy, hasher);
+        ContentPageFetcher fetcher = new ContentPageFetcher(urlPolicy, extraction);
+        return new MultiPageRunExecutor(repository, resultSink, extraction, urlPolicy, hasher,
+                new PagingExecutor(resultSink), fetcher);
     }
 
     /**

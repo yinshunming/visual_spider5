@@ -90,6 +90,7 @@ public interface RunRepository {
             int pageCount,
             int recordCountFinal,
             int failCount,
+            int contentFailCount,
             TaskSnapshot snapshot,
             java.time.OffsetDateTime createdAt,
             java.time.OffsetDateTime startedAt,

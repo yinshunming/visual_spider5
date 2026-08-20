@@ -231,7 +231,7 @@ class MultiPageRunExecutorTest {
                 new RunRepository.RunRecord(
                         11L, 1L, 100L,
                         RunState.SUCCESS, StopReason.COMPLETED,
-                        false, 0, finalCount, failCount,
+                        false, 0, finalCount, failCount, 0,
                         listSnapshotWithPagination(pagination),
                         java.time.OffsetDateTime.now(), null, null)));
     }

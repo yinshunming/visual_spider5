@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>List with blank content (M5-4)</title>
+</head>
+<body>
+<h1>Items (content fetches will fail)</h1>
+<table>
+  <tbody id="rows"></tbody>
+</table>
+<script>
+  (function () {
+    // 5 list items；每项的"内容页入口"指向 data: URL，
+    // BasicTargetUrlPolicy 拒绝非 http/https（spec §D6 URL_NOT_ALLOWED 路径），
+    // ContentPageFetcher 直接返 URL_NOT_ALLOWED -> CONTENT_PAGE_FAILED 事件 ->
+    // collection_run.content_fail_count 累加；list 字段仍写入 record，content 字段 null。
+    var rows = document.getElementById('rows');
+    for (var i = 1; i <= 5; i++) {
+      var d = '0' + i;
+      var tr = document.createElement('tr');
+      tr.innerHTML =
+        '<td><a class="title" href="data:text/html,&lt;h1&gt;blank&lt;/h1&gt;">Item ' + i + '</a></td>' +
+        '<td><span class="date">2024-08-' + d + '</span></td>' +
+        '<td class="count">' + (i * 10) + '</td>';
+      rows.appendChild(tr);
+    }
+  })();
+</script>
+</body>
+</html>
