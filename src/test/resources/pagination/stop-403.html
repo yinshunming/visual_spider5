@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Stop 403 fixture (M5-5)</title>
+</head>
+<body>
+<h1>Top items (server returns 403)</h1>
+<table>
+  <tbody id="rows"></tbody>
+</table>
+<script>
+  (function () {
+    var rows = document.getElementById('rows');
+    for (var i = 1; i <= 5; i++) {
+      var tr = document.createElement('tr');
+      tr.innerHTML =
+        '<td><a class="title" href="/items/' + i + '">Item ' + i + '</a></td>' +
+        '<td><span class="date">2024-09-0' + i + '</span></td>' +
+        '<td class="count">' + (i * 10) + '</td>';
+      rows.appendChild(tr);
+    }
+  })();
+</script>
+</body>
+</html>

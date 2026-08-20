@@ -35,11 +35,17 @@ public final class DefaultRunPageHandle implements RunPageHandle {
     private final BrowserLane lane;
     private final Page page;
     private final long runId;
+    private final PageStopDetector stopDetector;
     private volatile boolean closed;
 
     public DefaultRunPageHandle(BrowserLane lane, long runId) {
+        this(lane, runId, null);
+    }
+
+    public DefaultRunPageHandle(BrowserLane lane, long runId, PageStopDetector stopDetector) {
         this.lane = lane;
         this.runId = runId;
+        this.stopDetector = stopDetector;
         this.page = lane.createRunPage();
     }
 
@@ -56,6 +62,11 @@ public final class DefaultRunPageHandle implements RunPageHandle {
                     return new NavigationResult(false, 0, false, safeMsg(ex));
                 }
                 int status = resp == null ? 0 : resp.status();
+                // M5-5 / spec §D10：响应状态码 + DOM 验证码扫描
+                if (stopDetector != null) {
+                    stopDetector.recordResponse(status);
+                    stopDetector.checkCaptcha(page);
+                }
                 boolean captcha = detectCaptcha(page);
                 return new NavigationResult(true, status, captcha, null);
             }).join();
@@ -314,22 +325,32 @@ public final class DefaultRunPageHandle implements RunPageHandle {
     public ContentPageHandle openContentPageAndAwaitDomContentLoaded(String contentUrl) {
         // M5-4 / spec §D6：在同一 BrowserContext 内打开独立 Page navigate 到内容页；
         // 全程在 lane 线程执行，避免跨线程调用 Playwright 对象（ADR-0006）。
+        // M5-5 / spec §D10：内容页响应同样驱动 PageStopDetector（429 / 持续 403 / 验证码）。
         return lane.submit(() -> {
             try {
                 com.microsoft.playwright.Page newPage = page.context().newPage();
                 try {
-                    newPage.navigate(contentUrl, new Page.NavigateOptions()
-                            .setWaitUntil(com.microsoft.playwright.options.WaitUntilState.DOMCONTENTLOADED)
-                            .setTimeout(15_000));
-                } catch (RuntimeException navEx) {
-                    // navigate 失败时关掉新 page 再抛，避免泄漏
+                    Response resp;
                     try {
-                        newPage.close();
-                    } catch (RuntimeException ignored) {
+                        resp = newPage.navigate(contentUrl, new Page.NavigateOptions()
+                                .setWaitUntil(com.microsoft.playwright.options.WaitUntilState.DOMCONTENTLOADED)
+                                .setTimeout(15_000));
+                    } catch (RuntimeException navEx) {
+                        try {
+                            newPage.close();
+                        } catch (RuntimeException ignored) {
+                        }
+                        throw navEx;
                     }
-                    throw navEx;
+                    int status = resp == null ? 0 : resp.status();
+                    if (stopDetector != null) {
+                        stopDetector.recordResponse(status);
+                        stopDetector.checkCaptcha(newPage);
+                    }
+                    return new DefaultContentPageHandle(lane, newPage);
+                } catch (RuntimeException ex) {
+                    throw new RuntimeException("openContentPage failed: " + safeMsg(ex), ex);
                 }
-                return new DefaultContentPageHandle(lane, newPage);
             } catch (RuntimeException ex) {
                 throw new RuntimeException("openContentPage failed: " + safeMsg(ex), ex);
             }

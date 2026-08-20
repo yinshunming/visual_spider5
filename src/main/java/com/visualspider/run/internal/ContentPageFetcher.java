@@ -9,6 +9,7 @@ import com.visualspider.task.domain.FieldDefinition;
 import com.visualspider.task.domain.FieldKind;
 import com.visualspider.task.domain.FieldScope;
 import com.visualspider.task.domain.TaskDefinition;
+import com.visualspider.visualbrowser.spi.PacingPolicy;
 import com.visualspider.visualbrowser.spi.TargetUrlPolicy;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -42,10 +43,16 @@ final class ContentPageFetcher {
 
     private final TargetUrlPolicy urlPolicy;
     private final ExtractionPreview preview;
+    private final PacingPolicy pacingPolicy;
 
     ContentPageFetcher(TargetUrlPolicy urlPolicy, ExtractionPreview preview) {
+        this(urlPolicy, preview, null);
+    }
+
+    ContentPageFetcher(TargetUrlPolicy urlPolicy, ExtractionPreview preview, PacingPolicy pacingPolicy) {
         this.urlPolicy = urlPolicy;
         this.preview = preview;
+        this.pacingPolicy = pacingPolicy;
     }
 
     ContentFetchResult fetchWithRetry(RunPageHandle page, TaskDefinition def, String contentUrl) {
@@ -59,6 +66,10 @@ final class ContentPageFetcher {
         }
         Throwable last = null;
         for (int attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+            // M5-5 / spec §D9：每次内容页 navigate 前调用 PacingPolicy（同域间隔 ≥ 1s）
+            if (pacingPolicy != null) {
+                pacingPolicy.beforeNavigate(contentUrl);
+            }
             try (ContentPageHandle cp = page.openContentPageAndAwaitDomContentLoaded(contentUrl)) {
                 // navigate 后再次校验最终 URL，防止重定向到内网（spec §D6 沿用 list 入口策略）。
                 urlPolicy.validate(cp.currentUrl());

@@ -22,6 +22,7 @@ import com.visualspider.task.domain.FieldKind;
 import com.visualspider.task.domain.TaskDefinition;
 import com.visualspider.task.domain.TaskMode;
 import com.visualspider.task.domain.TaskSnapshot;
+import com.visualspider.visualbrowser.spi.PacingPolicy;
 import com.visualspider.visualbrowser.spi.TargetUrlPolicy;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -58,6 +59,7 @@ public class MultiPageRunExecutor implements RunExecutor {
     private final ExtractionPreview preview;
     private final TargetUrlPolicy urlPolicy;
     private final UniqueKeyHasher hasher;
+    private final PacingPolicy pacingPolicy;
     private final PagingExecutor pagingExecutor;
     private final ContentPageFetcher contentFetcher;
 
@@ -66,8 +68,9 @@ public class MultiPageRunExecutor implements RunExecutor {
                                 ExtractionPreview preview,
                                 TargetUrlPolicy urlPolicy,
                                 UniqueKeyHasher hasher) {
-        this(repository, resultSink, preview, urlPolicy, hasher,
-                new PagingExecutor(resultSink), new ContentPageFetcher(urlPolicy, preview));
+        this(repository, resultSink, preview, urlPolicy, hasher, null,
+                new PagingExecutor(resultSink),
+                new ContentPageFetcher(urlPolicy, preview));
     }
 
     public MultiPageRunExecutor(RunRepository repository,
@@ -75,6 +78,7 @@ public class MultiPageRunExecutor implements RunExecutor {
                                 ExtractionPreview preview,
                                 TargetUrlPolicy urlPolicy,
                                 UniqueKeyHasher hasher,
+                                PacingPolicy pacingPolicy,
                                 PagingExecutor pagingExecutor,
                                 ContentPageFetcher contentFetcher) {
         this.repository = repository;
@@ -82,6 +86,7 @@ public class MultiPageRunExecutor implements RunExecutor {
         this.preview = preview;
         this.urlPolicy = urlPolicy;
         this.hasher = hasher;
+        this.pacingPolicy = pacingPolicy;
         this.pagingExecutor = pagingExecutor;
         this.contentFetcher = contentFetcher;
     }
@@ -132,6 +137,10 @@ public class MultiPageRunExecutor implements RunExecutor {
             tryEmitTerminal(runId, RunState.FAILED, StopReason.ENTRY_FAILED,
                     "invalid start url");
             return;
+        }
+        // M5-5 / spec §D9：list 入口 navigate 前调用 PacingPolicy（同域间隔 ≥ 1s）
+        if (pacingPolicy != null) {
+            pacingPolicy.beforeNavigate(def.startUrl());
         }
         RunPageHandle.NavigationResult nav = page.navigateAndAwaitDomContentLoaded(def.startUrl());
         if (!nav.ok()) {

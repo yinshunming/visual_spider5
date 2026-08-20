@@ -11,6 +11,7 @@ import com.visualspider.task.spi.TaskReadiness;
 import com.visualspider.task.spi.TaskSnapshotFactory;
 import com.visualspider.visualbrowser.BrowserLane;
 import com.visualspider.visualbrowser.spi.LanePool;
+import com.visualspider.visualbrowser.spi.PacingPolicy;
 import com.visualspider.visualbrowser.spi.TargetUrlPolicy;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.ApplicationRunner;
@@ -64,8 +65,10 @@ public class RunModuleConfig {
     }
 
     @Bean
-    public RunPageHandleProvider runPageHandleProvider(RunLanePool runLanePool) {
-        return new DefaultRunPageHandleProvider(runLanePool);
+    public RunPageHandleProvider runPageHandleProvider(RunLanePool runLanePool,
+                                                       RunRepository repository,
+                                                       RunResultSink resultSink) {
+        return new DefaultRunPageHandleProvider(runLanePool, repository, resultSink);
     }
 
     @Bean
@@ -116,10 +119,12 @@ public class RunModuleConfig {
                                             RunResultSink resultSink,
                                             ExtractionPreview extraction,
                                             TargetUrlPolicy urlPolicy,
+                                            PacingPolicy pacingPolicy,
                                             com.visualspider.result.internal.UniqueKeyHasher hasher) {
-        ContentPageFetcher fetcher = new ContentPageFetcher(urlPolicy, extraction);
+        ContentPageFetcher fetcher = new ContentPageFetcher(urlPolicy, extraction, pacingPolicy);
+        PagingExecutor pagingExecutor = new PagingExecutor(resultSink, pacingPolicy);
         return new MultiPageRunExecutor(repository, resultSink, extraction, urlPolicy, hasher,
-                new PagingExecutor(resultSink), fetcher);
+                pacingPolicy, pagingExecutor, fetcher);
     }
 
     /**

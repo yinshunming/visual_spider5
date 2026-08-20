@@ -13,6 +13,7 @@ import com.visualspider.task.domain.NavigationMode;
 import com.visualspider.task.domain.PaginationRule;
 import com.visualspider.task.domain.SelectorType;
 import com.visualspider.task.domain.TaskDefinition;
+import com.visualspider.visualbrowser.spi.PacingPolicy;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
@@ -55,14 +56,20 @@ final class PagingExecutor {
 
     private final RunResultSink resultSink;
     private final ContentHasher contentHasher;
+    private final PacingPolicy pacingPolicy;
 
     PagingExecutor(RunResultSink resultSink) {
-        this(resultSink, new ContentHasher());
+        this(resultSink, new ContentHasher(), null);
     }
 
-    PagingExecutor(RunResultSink resultSink, ContentHasher contentHasher) {
+    PagingExecutor(RunResultSink resultSink, PacingPolicy pacingPolicy) {
+        this(resultSink, new ContentHasher(), pacingPolicy);
+    }
+
+    PagingExecutor(RunResultSink resultSink, ContentHasher contentHasher, PacingPolicy pacingPolicy) {
         this.resultSink = resultSink;
         this.contentHasher = contentHasher;
+        this.pacingPolicy = pacingPolicy;
     }
 
     /** 每张 list 页回调：处理当前页 items（含初始页 + 每张翻页后页）。 */
@@ -145,6 +152,11 @@ final class PagingExecutor {
             if (ctx.isCancelRequested() || ctx.recordLimitExceeded()
                     || ctx.pageLimitExceeded() || ctx.timeLimitExceeded(System.currentTimeMillis())) {
                 return LoopStop.natural();
+            }
+            // M5-5 / spec §D9：每次翻页 click 前调用 PacingPolicy（NEXT_PAGE 触发 navigation
+            // 时由 click 等 DOMContentLoaded；LOAD_MORE 不触发 navigation 但仍按节奏登记）。
+            if (pacingPolicy != null) {
+                pacingPolicy.beforeNavigate(page.currentUrl());
             }
             ClickResult click = page.click(pagination.selector(), PAGINATION_WAIT_MS);
             if (click == ClickResult.NOT_FOUND) {
