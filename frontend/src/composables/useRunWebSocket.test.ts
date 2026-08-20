@@ -74,6 +74,7 @@ function makeDetail(): RunDetail {
     pageCount: 0,
     recordCountFinal: 0,
     failCount: 0,
+    contentFailCount: 0,
     createdAt: '2026-08-02T00:00:00Z',
     startedAt: null,
     finishedAt: null,
@@ -87,7 +88,7 @@ function makeDetail(): RunDetail {
       schemaVersion: 1,
       taskVersion: 1,
       definition: {
-        schemaVersion: 2,
+        schemaVersion: 3,
         mode: 'SINGLE_PAGE',
         startUrl: 'http://example.com',
         viewport: { width: 1280, height: 720 },

@@ -82,7 +82,7 @@ class RunProgressBroadcasterTest {
                 state == RunState.SUCCESS ? StopReason.COMPLETED : null,
                 "navigate", "https://example.com/",
                 page, finalCount, finalCount, 0,
-                null, 100L);
+                null, null, null, null, 100L);
     }
 
     private static RunEvent event(long id, RunEventLevel level, String message) {

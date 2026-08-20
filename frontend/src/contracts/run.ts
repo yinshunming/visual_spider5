@@ -39,8 +39,13 @@ export type StopReason =
   | 'HTTP_403'
   | 'CAPTCHA'
   | 'APP_INTERRUPTED'
+  // M5-3 / spec §D16：翻页主动停止 + 重复页保护
+  | 'PAGINATION_DISAPPEARED'
+  | 'PAGINATION_DISABLED'
+  | 'PAGINATION_NO_NEW_ITEMS'
+  | 'DUPLICATE_PAGE'
 
-/** 列表/详情共用 summary（spec §D17）。 */
+/** 列表/详情共用 summary（spec §D17；M5-6 #44 加 pageCount + contentFailCount）。 */
 export interface RunSummary {
   runId: number
   taskId: number
@@ -53,6 +58,8 @@ export interface RunSummary {
   recordCountDedup: number
   recordCountFinal: number
   failCount: number
+  /** M5-6 新增：内容页 navigate 失败(retry 耗尽)的记录数；M4 reader 旧字段时为 0。 */
+  contentFailCount: number
   createdAt: string
   startedAt: string | null
   finishedAt: string | null

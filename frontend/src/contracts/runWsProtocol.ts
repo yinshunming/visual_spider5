@@ -1,23 +1,27 @@
 /**
- * M3-5 #27 运行进度 WebSocket 协议 schema（schemaVersion: 1）。
+ * M3-5 #27 运行进度 WebSocket 协议 schema（schemaVersion: 2 / M5-6 #44）。
  *
  * 服务端 -> 客户端：
  *   PROGRESS / EVENT / TERMINAL
  *
  * 客户端 -> 服务端：仅 CANCEL。
- * 入站 / 出站帧在边界用 {@link isValidFrame} 校验；schemaVersion !== 1 一律拒。
+ * 入站 / 出站帧在边界用 {@link isValidFrame} 校验；schemaVersion !== 2 一律拒。
+ *
+ * <p>M5-6 升 schemaVersion=2：{@link ProgressFrame} 加
+ * {@link currentPageIndex} / {@link currentItemIndex} / {@link contentFetched}（nullable），
+ * 旧客户端忽略。
  */
 
 import type { RunState, StopReason, RunEventLevel } from './run'
 
-export const RUN_WS_SCHEMA_VERSION = 1 as const
+export const RUN_WS_SCHEMA_VERSION = 2 as const
 
 export interface BaseFrame {
   schemaVersion: typeof RUN_WS_SCHEMA_VERSION
 }
 
 /**
- * 服务端状态推送（spec §D16）。
+ * 服务端状态推送（spec §D13 / §D16）。
  * 字段顺序仅用于日志阅读；Jackson 序列化时按 record 顺序。
  */
 export interface ProgressFrame extends BaseFrame {
@@ -33,6 +37,12 @@ export interface ProgressFrame extends BaseFrame {
   failCount: number
   /** M4 spec §D11：list 模式下批次写入后推送命中数；SINGLE_PAGE 路径为 undefined。 */
   listItemMatchCount?: number
+  /** M5 spec §D13：当前 list 页序号（1-based）；SINGLE_PAGE 路径 undefined。 */
+  currentPageIndex?: number
+  /** M5 spec §D13：当前 item 序号；SINGLE_PAGE 路径 undefined。 */
+  currentItemIndex?: number
+  /** M5 spec §D13：内容页 fetch 已完成计数；SINGLE_PAGE 路径 undefined。 */
+  contentFetched?: number
   /** 已累计耗时；启动前为 0。 */
   elapsedMs: number
 }

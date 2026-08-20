@@ -40,8 +40,8 @@ import org.springframework.web.socket.WebSocketSession;
 @Component
 public class RunProgressBroadcaster {
 
-    /** M3 spec §D16：WS schemaVersion 固定 1。 */
-    public static final int SCHEMA_VERSION = 1;
+    /** WS schemaVersion：M3 spec §D16 固定 1；M5 spec §D13 升 2 加 currentPageIndex / currentItemIndex / contentFetched（nullable 字段，旧客户端忽略）。 */
+    public static final int SCHEMA_VERSION = 2;
 
     /** 终态集合：命中即发 TERMINAL 并 close。 */
     static final List<RunState> TERMINAL_STATES = List.of(
@@ -87,9 +87,13 @@ public class RunProgressBroadcaster {
     }
 
     /**
-     * 服务端 -&gt; 客户端 {@code PROGRESS} 帧（spec §D16）：
-     * {@code {schemaVersion:1, type:PROGRESS, status, stopReason, stage, currentUrl,
-     * pageCount, recordCountRaw, recordCountFinal, failCount, elapsedMs}}
+     * 服务端 -&gt; 客户端 {@code PROGRESS} 帧（spec §D13 / §D16）：
+     * {@code {schemaVersion:2, type:PROGRESS, status, stopReason, stage, currentUrl,
+     * pageCount, recordCountRaw, recordCountFinal, failCount,
+     * currentPageIndex, currentItemIndex, contentFetched, elapsedMs}}
+     *
+     * <p>M5 新增 {@code currentPageIndex} / {@code currentItemIndex} / {@code contentFetched}
+     * （nullable，SINGLE_PAGE 路径为 null；list 模式运行时由 executor 填），旧客户端忽略。
      */
     public static final class ProgressFrame {
         public final int schemaVersion = SCHEMA_VERSION;
@@ -102,6 +106,9 @@ public class RunProgressBroadcaster {
         public final int recordCountRaw;
         public final int recordCountFinal;
         public final int failCount;
+        public final Integer currentPageIndex;
+        public final Integer currentItemIndex;
+        public final Integer contentFetched;
         public final long elapsedMs;
 
         public ProgressFrame(RunProgress p) {
@@ -113,6 +120,9 @@ public class RunProgressBroadcaster {
             this.recordCountRaw = p.recordCountRaw();
             this.recordCountFinal = p.recordCountFinal();
             this.failCount = p.failCount();
+            this.currentPageIndex = p.currentPageIndex();
+            this.currentItemIndex = p.currentItemIndex();
+            this.contentFetched = p.contentFetched();
             this.elapsedMs = p.elapsedMs();
         }
     }

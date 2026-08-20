@@ -50,6 +50,13 @@ public enum BusinessErrorCode {
     SESSION_NOT_OWNER(403, "SESSION_NOT_OWNER", "无权访问该配置会话"),
     CONFIG_LANE_FULL(409, "CONFIG_LANE_FULL", "配置会话 lane 已占满，请稍候重试"),
     TASK_NOT_DRAFT(409, "TASK_NOT_DRAFT", "仅草稿或可运行状态的任务可开启配置会话"),
+    // M5 readiness 校验（spec §D11 / D15）
+    PAGINATION_RULE_INVALID(400, "PAGINATION_RULE_INVALID", "翻页规则元素选择器未匹配或不可见"),
+    CONTENT_LINK_NO_MATCH(400, "CONTENT_LINK_NO_MATCH", "内容页入口字段选择器未匹配"),
+    CONTENT_LINK_INVALID_SOURCE(400, "CONTENT_LINK_INVALID_SOURCE", "内容页入口字段必须为链接类型"),
+    UNIQUE_KEY_ON_LINK_FIELD(400, "UNIQUE_KEY_ON_LINK_FIELD", "唯一键不能选内容页入口字段"),
+    FIELD_SCOPE_CONFLICT(400, "FIELD_SCOPE_CONFLICT", "列表字段与内容页字段同名"),
+    CONTENT_FIELD_NO_MATCH(400, "CONTENT_FIELD_NO_MATCH", "内容页字段选择器未匹配"),
     // M3 运行（spec §D19）
     RUN_NOT_FOUND(404, "RUN_NOT_FOUND", "运行不存在"),
     RUN_NOT_OWNER(403, "RUN_NOT_OWNER", "无权访问该运行"),

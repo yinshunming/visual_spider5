@@ -42,7 +42,7 @@ const DATE_FIELD: FieldDefinition = {
 
 function baseDefinition(): TaskDefinition {
   return {
-    schemaVersion: 2,
+    schemaVersion: 3,
     mode: 'LIST',
     startUrl: 'https://example.com/list',
     viewport: { width: 1280, height: 720 },

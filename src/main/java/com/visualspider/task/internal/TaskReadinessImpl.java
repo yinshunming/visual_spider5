@@ -3,8 +3,11 @@ package com.visualspider.task.internal;
 import com.visualspider.identity.domain.ActorId;
 import com.visualspider.shared.api.BusinessErrorCode;
 import com.visualspider.task.domain.FieldDefinition;
+import com.visualspider.task.domain.FieldKind;
+import com.visualspider.task.domain.FieldScope;
 import com.visualspider.task.domain.FieldSource;
 import com.visualspider.task.domain.Limits;
+import com.visualspider.task.domain.PaginationRule;
 import com.visualspider.task.domain.ReadinessReport;
 import com.visualspider.task.domain.ReadinessReport.ReadinessError;
 import com.visualspider.task.domain.SelectorType;
@@ -18,9 +21,11 @@ import com.visualspider.task.spi.TaskCatalog;
 import com.visualspider.task.spi.TaskReadiness;
 import java.net.URI;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Set;
 import java.util.regex.Pattern;
 import java.util.regex.PatternSyntaxException;
@@ -88,6 +93,11 @@ public class TaskReadinessImpl implements TaskReadiness {
         validateListItemRule(draft, errors);
         validateUniqueKey(draft, errors);
         validateFields(draft.fields(), errors);
+        // M5 readiness 静态校验（spec §D11）
+        validatePaginationRule(draft, errors);
+        validateContentLinkSource(draft, errors);
+        validateUniqueKeyNotOnLinkField(draft, errors);
+        validateFieldScopeConflict(draft, errors);
         // Live 实匹配校验（spec §D10）：listItemRule 命中数 + 字段多匹配
         if (draft.mode() instanceof com.visualspider.task.domain.TaskMode.List
                 && draft.listItemRule() != null) {
@@ -100,6 +110,9 @@ public class TaskReadinessImpl implements TaskReadiness {
                     BusinessErrorCode mapped = switch (code) {
                         case "LIST_ITEM_RULE_NO_MATCH" -> BusinessErrorCode.LIST_ITEM_RULE_NO_MATCH;
                         case "MULTIPLE_MATCH" -> BusinessErrorCode.MULTIPLE_MATCH;
+                        case "PAGINATION_RULE_INVALID" -> BusinessErrorCode.PAGINATION_RULE_INVALID;
+                        case "CONTENT_LINK_NO_MATCH" -> BusinessErrorCode.CONTENT_LINK_NO_MATCH;
+                        case "CONTENT_FIELD_NO_MATCH" -> BusinessErrorCode.CONTENT_FIELD_NO_MATCH;
                         default -> BusinessErrorCode.TASK_INVALID_DEFINITION;
                     };
                     errors.add(error(mapped, msg, "live"));
@@ -368,6 +381,89 @@ public class TaskReadinessImpl implements TaskReadiness {
 
     private static ReadinessError error(BusinessErrorCode code, String message, String fieldPath) {
         return new ReadinessError(code.code(), message, fieldPath);
+    }
+
+    /**
+     * M5 readiness / spec §D11：{@code paginationRule} 静态校验（mode / selector 必填由
+     * {@link PaginationRule} 紧凑构造器保证；此处仅做"scope=LIST 模式必填"防御）。
+     *
+     * <p>实匹配（{@code PAGINATION_RULE_INVALID}）由 live hook 在 {@link #validate} 末尾
+     * 通过 blockingCodes 报回；本类不重复实现 DOM 查询。
+     */
+    private void validatePaginationRule(TaskDefinition draft, List<ReadinessError> errors) {
+        if (draft.paginationRule() != null && !(draft.mode() instanceof TaskMode.List)) {
+            errors.add(error(BusinessErrorCode.PAGINATION_RULE_INVALID,
+                    "paginationRule 仅在 LIST 模式下生效", "paginationRule"));
+        }
+    }
+
+    /**
+     * M5 / spec §D2 + §D11：{@code fieldKind=LIST_CONTENT_LINK} 字段必须为链接类型
+     * （{@link FieldSource#LINK_URL} 或 {@link FieldSource#ATTRIBUTE} 且
+     * {@code attributeName == "href"}），否则 {@code CONTENT_LINK_INVALID_SOURCE}。
+     */
+    private void validateContentLinkSource(TaskDefinition draft, List<ReadinessError> errors) {
+        for (int i = 0; i < draft.fields().size(); i++) {
+            FieldDefinition f = draft.fields().get(i);
+            if (f.fieldKind() != FieldKind.LIST_CONTENT_LINK) {
+                continue;
+            }
+            String path = "fields[" + i + "]";
+            boolean ok = (f.source() == FieldSource.LINK_URL)
+                    || (f.source() == FieldSource.ATTRIBUTE && "href".equals(f.attributeName()));
+            if (!ok) {
+                errors.add(error(BusinessErrorCode.CONTENT_LINK_INVALID_SOURCE,
+                        "内容页入口字段必须为 LINK_URL 或 ATTRIBUTE(name=href)",
+                        path + ".source"));
+            }
+        }
+    }
+
+    /**
+     * M5 / spec §D11：唯一键字段名不能指向 {@code fieldKind=LIST_CONTENT_LINK} 字段
+     * （否则 record 去重基准不稳定）。
+     */
+    private void validateUniqueKeyNotOnLinkField(TaskDefinition draft, List<ReadinessError> errors) {
+        if (draft.uniqueKey() == null || draft.uniqueKey().isEmpty()) {
+            return;
+        }
+        Set<String> linkNames = new HashSet<>();
+        for (FieldDefinition f : draft.fields()) {
+            if (f.fieldKind() == FieldKind.LIST_CONTENT_LINK) {
+                linkNames.add(f.name());
+            }
+        }
+        for (int i = 0; i < draft.uniqueKey().size(); i++) {
+            UniqueKeyField k = draft.uniqueKey().get(i);
+            if (k == null || k.fieldName() == null) {
+                continue;
+            }
+            if (linkNames.contains(k.fieldName())) {
+                errors.add(error(BusinessErrorCode.UNIQUE_KEY_ON_LINK_FIELD,
+                        "唯一键不能选内容页入口字段: " + k.fieldName(),
+                        "uniqueKey[" + i + "].fieldName"));
+            }
+        }
+    }
+
+    /**
+     * M5 / spec §D6：相同字段名不能同时存在 {@code scope=LIST} 与 {@code scope=CONTENT}
+     * 两个字段（按字段名合并语义不允许同名冲突）。
+     */
+    private void validateFieldScopeConflict(TaskDefinition draft, List<ReadinessError> errors) {
+        Map<String, FieldScope> scopeByName = new HashMap<>();
+        for (int i = 0; i < draft.fields().size(); i++) {
+            FieldDefinition f = draft.fields().get(i);
+            if (f.name() == null || f.name().isBlank()) {
+                continue;  // 空字段名由 validateFields 报错
+            }
+            FieldScope prev = scopeByName.putIfAbsent(f.name(), f.scope());
+            if (prev != null && prev != f.scope()) {
+                errors.add(error(BusinessErrorCode.FIELD_SCOPE_CONFLICT,
+                        "字段 '" + f.name() + "' 同时存在 LIST 与 CONTENT scope",
+                        "fields[" + i + "].scope"));
+            }
+        }
     }
 
     // Helper for callers that already possess a TaskDraft.

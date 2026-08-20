@@ -16,7 +16,7 @@ import type { ListPreviewItem, ListPreviewResult, TaskDefinition } from '../../c
 import { visualSessionApi } from '../../api/visualSession'
 
 const DEF: TaskDefinition = {
-  schemaVersion: 2,
+  schemaVersion: 3,
   mode: 'LIST',
   startUrl: 'https://example.com/list',
   viewport: { width: 1280, height: 720 },

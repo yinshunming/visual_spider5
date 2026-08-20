@@ -1,14 +1,18 @@
 /**
- * M2-5 #21 REST 契约（schemaVersion: 2 / M4-1 #31 / M4-6 #36）。
+ * M2-5 #21 REST 契约（schemaVersion: 2 / M4-1 #31 / M4-6 #36 / M5-6 #44）。
  *
  * 由后端 OpenAPI/手写源类型生成；前端不得手工修改字段名。
  *
  * <p>V2 扩展：{@link TaskDefinition} 加 {@link listItemRule} / {@link uniqueKey} /
  * {@link limits}；新增 infer 与 preview-list 端点契约。V1 旧 reader 仍可读（依赖
  * 服务端 {@code @JsonIgnoreProperties(ignoreUnknown = true)}）。
+ *
+ * <p>V3 扩展（M5-6 #44）：{@link TaskDefinition} 加 {@link paginationRule}；
+ * {@link FieldDefinition} 加 {@link FieldScope} / {@link FieldKind}；
+ * {@link ReadinessError} 加 6 项 M5 错误码。V2 旧 reader 仍可读（缺省 scope=LIST / fieldKind=LIST_VALUE）。
  */
 
-export const VISUAL_SESSION_SCHEMA_VERSION = 2 as const
+export const VISUAL_SESSION_SCHEMA_VERSION = 3 as const
 
 export type FieldSource = 'VISIBLE_TEXT' | 'ATTRIBUTE' | 'LINK_URL' | 'IMAGE_URL' | 'PAGE_URL'
 export type ResultType = 'TEXT' | 'NUMBER' | 'URL'
@@ -31,6 +35,22 @@ export interface WaitPolicy {
   extraWaitSeconds: number  // 0-5
 }
 
+/**
+ * M5 新增（spec §D2）：字段作用域。缺省 'LIST'（V2 旧 reader 默认值，向后兼容）。
+ */
+export type FieldScope = 'LIST' | 'CONTENT'
+
+/**
+ * M5 新增（spec §D2）：字段用途细分。
+ * <ul>
+ *   <li>{@code LIST_VALUE}：普通字段值（LIST 或 CONTENT scope 都用）</li>
+ *   <li>{@code LIST_CONTENT_LINK}：内容页入口 URL；scope 必须 LIST</li>
+ *   <li>{@code CONTENT_VALUE}：内容页字段值；scope 必须 CONTENT</li>
+ * </ul>
+ * 缺省 'LIST_VALUE'（V2 旧 reader 默认值）。
+ */
+export type FieldKind = 'LIST_VALUE' | 'LIST_CONTENT_LINK' | 'CONTENT_VALUE'
+
 export interface FieldDefinition {
   name: string
   source: FieldSource
@@ -42,6 +62,22 @@ export interface FieldDefinition {
   trim: TrimPolicy
   regex?: string
   required: boolean
+  /** M5 新增：缺省 'LIST'。 */
+  scope?: FieldScope
+  /** M5 新增：缺省 'LIST_VALUE'。 */
+  fieldKind?: FieldKind
+}
+
+/**
+ * M5 新增（spec §D1）：翻页规则。{@link NavigationMode} 二选一。
+ * 可空 → 服务端 / 多页执行器退化为"只跑当前页"。
+ */
+export type NavigationMode = 'NEXT_PAGE' | 'LOAD_MORE'
+
+export interface PaginationRule {
+  mode: NavigationMode
+  selector: string
+  selectorType?: SelectorType
 }
 
 /**
@@ -86,6 +122,8 @@ export interface TaskDefinition {
   listItemRule?: ListItemRule
   /** M4 新增：可空；空数组 = 不去重。 */
   uniqueKey?: UniqueKeyField[]
+  /** M5 新增：可空 → "只跑当前页"（spec §D1）。 */
+  paginationRule?: PaginationRule
   fields: FieldDefinition[]
 }
 
@@ -223,7 +261,7 @@ export interface BusinessError {
 }
 
 /**
- * M4 新增：任务 READY 校验错误（spec §D10）。前端 list-mode 配置面板按
+ * M4 新增：任务 READY 校验错误（spec §D10 / M5-6 #44）。前端 list-mode 配置面板按
  * {@code fieldPath} 在对应字段上回显红框 + tooltip。
  */
 export interface ReadinessError {
@@ -244,6 +282,13 @@ export interface ReadinessError {
     | 'MULTIPLE_MATCH'
     | 'UNIQUE_KEY_UNKNOWN_FIELD'
     | 'LIMITS_OUT_OF_RANGE'
+    // M5-6 新增（spec §D11 / D15）
+    | 'PAGINATION_RULE_INVALID'
+    | 'CONTENT_LINK_NO_MATCH'
+    | 'CONTENT_LINK_INVALID_SOURCE'
+    | 'UNIQUE_KEY_ON_LINK_FIELD'
+    | 'FIELD_SCOPE_CONFLICT'
+    | 'CONTENT_FIELD_NO_MATCH'
   message: string
   fieldPath?: string
 }

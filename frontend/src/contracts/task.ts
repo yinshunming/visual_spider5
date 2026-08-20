@@ -9,7 +9,8 @@
 import type { TaskDefinition } from './visualSession'
 
 export const TASK_SUMMARY_SCHEMA_VERSION = 1 as const
-export const TASK_DRAFT_SCHEMA_VERSION = 2 as const
+/** M5-6 / spec §D11：TaskDraft schemaVersion 升至 3（含 paginationRule + scope/fieldKind）。 */
+export const TASK_DRAFT_SCHEMA_VERSION = 3 as const
 
 export type TaskSummaryStatus = 'DRAFT' | 'READY'
 export type TaskSummaryMode = 'SINGLE_PAGE' | 'LIST'

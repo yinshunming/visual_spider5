@@ -466,6 +466,9 @@ class RunCoordinatorImplTest {
             return Optional.of(new RunProgress(r.status(), r.stopReason(),
                     null, null, r.pageCount(), r.pageCount(), r.recordCountFinal(), r.failCount(),
                     null,  // listItemMatchCount
+                    null,  // currentPageIndex（M5 spec §D13 nullable）
+                    null,  // currentItemIndex
+                    null,  // contentFetched
                     r.startedAt() == null ? 0
                             : java.time.Duration.between(r.startedAt().toInstant(),
                                     OffsetDateTime.now().toInstant()).toMillis()));
