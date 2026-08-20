@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Content-link no-match fixture (M5-6)</title>
+</head>
+<body>
+<h1>Items (content-link 字段选择器不匹配)</h1>
+<table>
+  <tbody id="rows"></tbody>
+</table>
+<script>
+  (function () {
+    // 5 list items；每项没有 <a> 标签（content-page-link 字段选择器假设 .nope），
+    // 测 readiness CONTENT_LINK_NO_MATCH 阻止就绪。
+    var rows = document.getElementById('rows');
+    for (var i = 1; i <= 5; i++) {
+      var d = '0' + i;
+      var tr = document.createElement('tr');
+      tr.innerHTML =
+        '<td><span class="title">Item ' + i + '</span></td>' +
+        '<td><span class="date">2024-10-' + d + '</span></td>' +
+        '<td class="count">' + (i * 10) + '</td>';
+      rows.appendChild(tr);
+    }
+  })();
+</script>
+</body>
+</html>

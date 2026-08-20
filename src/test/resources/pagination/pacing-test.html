@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Pacing test fixture (M5-5)</title>
+</head>
+<body>
+<h1>Pacing test (NEXT_PAGE, N 页)</h1>
+<table>
+  <tbody id="rows"></tbody>
+</table>
+<nav>
+  <a id="next" class="next" href="?page=2">下一页</a>
+</nav>
+<!-- x-load-time meta 记录页面加载 epoch millis（用于 e2e smoke 校验） -->
+<meta name="x-load-time" content="placeholder">
+<script>
+  (function () {
+    var params = new URLSearchParams(location.search);
+    var page = parseInt(params.get('page') || '1', 10);
+    var meta = document.querySelector('meta[name="x-load-time"]');
+    if (meta) meta.setAttribute('content', String(Date.now()));
+    // 5 页 × 5 行，page 5 移除 next 触发自然结束
+    var titles = {
+      1: ['Alpha', 'Beta', 'Gamma', 'Delta', 'Epsilon'],
+      2: ['Zeta', 'Eta', 'Theta', 'Iota', 'Kappa'],
+      3: ['Lambda', 'Mu', 'Nu', 'Xi', 'Omicron'],
+      4: ['Pi', 'Rho', 'Sigma', 'Tau', 'Upsilon'],
+      5: ['Phi', 'Chi', 'Psi', 'Omega', 'Final']
+    };
+    var rows = document.getElementById('rows');
+    titles[page].forEach(function (t, i) {
+      var n = (page - 1) * 5 + i + 1;
+      var tr = document.createElement('tr');
+      tr.innerHTML =
+        '<td><a class="title" href="/items/' + n + '">' + t + '</a></td>' +
+        '<td><span class="date">2024-12-' + (n < 10 ? '0' + n : n) + '</span></td>' +
+        '<td class="count">' + (n * 10) + '</td>';
+      rows.appendChild(tr);
+    });
+    if (page >= 5) {
+      var next = document.getElementById('next');
+      if (next && next.parentNode) next.parentNode.removeChild(next);
+    }
+  })();
+</script>
+</body>
+</html>
