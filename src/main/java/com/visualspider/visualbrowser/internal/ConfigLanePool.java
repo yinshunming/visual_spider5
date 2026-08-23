@@ -1,5 +1,7 @@
 package com.visualspider.visualbrowser.internal;
 
+import com.visualspider.shared.health.BrowserHealthIndicator;
+import com.visualspider.shared.health.LaneStatesProvider;
 import com.visualspider.visualbrowser.BrowserLane;
 import com.visualspider.visualbrowser.spi.LanePool;
 import com.visualspider.visualbrowser.spi.Lease;
@@ -22,7 +24,7 @@ import java.util.function.IntFunction;
  * <p>lane 关闭顺序由 {@link BrowserLane#close()} 保证（spec §4.1 spike）：
  * Page → BrowserContext → Browser → Playwright 在同一 lane 线程串行。
  */
-public final class ConfigLanePool implements LanePool, AutoCloseable {
+public final class ConfigLanePool implements LanePool, AutoCloseable, LaneStatesProvider {
 
     /** 默认 lane 池容量（spec §D3 / ADR-0004，配置化延后 M6）。 */
     public static final int DEFAULT_CAPACITY = 3;
@@ -140,6 +142,11 @@ public final class ConfigLanePool implements LanePool, AutoCloseable {
             }
         }
         return -1;
+    }
+
+    @Override
+    public List<LaneStatesProvider.LaneSnapshot> laneSnapshots() {
+        return BrowserHealthIndicator.snapshotsOf(allLanes);
     }
 
     /** lease 内部类：持有 lane 引用；close 触发归还；isOpen 反映状态。 */

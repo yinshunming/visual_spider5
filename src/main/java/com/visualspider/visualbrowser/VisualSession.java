@@ -39,7 +39,7 @@ public final class VisualSession implements AutoCloseable {
      */
     public VisualSession(String sessionId, String startUrl, Consumer<BrowserContext> contextCustomizer) {
         this.sessionId = sessionId;
-        this.lane = new BrowserLane(contextCustomizer);
+        this.lane = new BrowserLane("legacy", 0, contextCustomizer);
         this.control = new PlaywrightControl(lane);
         this.frameBuffer = new FrameBuffer();
         this.sequencer = new InputSequencer();

@@ -30,6 +30,7 @@ public class LanePoolConfig {
         if (capacity <= 0) {
             capacity = ConfigLanePool.DEFAULT_CAPACITY;
         }
-        return new ConfigLanePool(capacity, i -> new BrowserLane(ssrfRouteGuard::install));
+        return new ConfigLanePool(capacity,
+                i -> new BrowserLane("config", i, ssrfRouteGuard::install));
     }
 }

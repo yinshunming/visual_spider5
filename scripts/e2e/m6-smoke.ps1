@@ -170,9 +170,42 @@ try {
         Fail "/ws/runs/{runId} 路径不可达: $_"
     }
 
-    # ----- Step 4-11: M6-4 ~ M6-6 后续工单补齐 -----
-    Step 4 "lane 崩溃检测/重建 + health 真实化（M6-4） — 占位"
+    # ----- Step 4: lane 崩溃检测/重建 + health 真实化（M6-4）-----
+    Step 4 "lane 崩溃检测/重建 + health 真实化（M6-4）"
+    # 验证 health 端点含 lane per-lane 状态 + 线程名
+    $cookies = Invoke-WebRequest "$BaseUrl/actuator/health" -UseBasicParsing -TimeoutSec 5 -SessionVariable _
+    $healthJson = $cookies.Content | ConvertFrom-Json
+    if (-not $healthJson.components.browser) {
+        Fail "actuator/health 缺 browser 组件"
+    }
+    $browserDetail = $healthJson.components.browser.details
+    if (-not $browserDetail.lanes) {
+        Fail "browser.details.lanes 缺失"
+    }
+    $laneKeys = @($browserDetail.lanes.PSObject.Properties.Name)
+    if ($laneKeys.Count -lt 6) {
+        Fail "browser.lanes 至少应有 6 个 (config 3 + run 3), 实际 $($laneKeys.Count)"
+    }
+    # 验证线程名唯一且格式正确
+    $threadNames = @()
+    foreach ($k in $laneKeys) {
+        $lane = $browserDetail.lanes.$k
+        if ($lane.state -notin @('HEALTHY', 'CRASHED')) {
+            Fail "lane $k state=$($lane.state) 不在 HEALTHY/CRASHED"
+        }
+        if ($lane.thread -notmatch '^browser-lane-(config|run)-\d+$') {
+            Fail "lane $k thread=$($lane.thread) 不符合 browser-lane-{config|run}-{n} 格式"
+        }
+        $threadNames += $lane.thread
+    }
+    if (($threadNames | Sort-Object -Unique).Count -ne $threadNames.Count) {
+        Fail "lane 线程名重复: $($threadNames -join ',')"
+    }
+    Ok "health 含 per-lane 状态 ($($laneKeys.Count) 个), 线程名唯一: $($threadNames -join ',')"
+
+    # ----- Step 5-11: M6-5 ~ M6-6 后续工单补齐 -----
     Step 5 "压测形态 + RunLimits 收敛（M6-5） — 占位"
+    Step 6 "指标/日志/权限/保留审计（M6-6） — 占位"
     Step 6 "指标/日志/权限/保留审计（M6-6） — 占位"
     Step 7 "指标可查 + LogSanityIT + 权限矩阵 + retention.days admin REST — 占位"
     Step 8 "改 retention.days 后清理按新值执行 — 占位"

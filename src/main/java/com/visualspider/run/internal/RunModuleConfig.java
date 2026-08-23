@@ -47,7 +47,7 @@ public class RunModuleConfig {
             @Value("${run.lane-pool.capacity:3}") int capacity,
             SsrfRouteGuard ssrfRouteGuard) {
         int cap = capacity > 0 ? capacity : RunLanePool.DEFAULT_CAPACITY;
-        return new RunLanePool(cap, i -> new BrowserLane(ssrfRouteGuard::install));
+        return new RunLanePool(cap, i -> new BrowserLane("run", i, ssrfRouteGuard::install));
     }
 
     @Bean

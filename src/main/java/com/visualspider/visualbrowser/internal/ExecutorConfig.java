@@ -35,6 +35,6 @@ public class ExecutorConfig {
 
     @Bean(destroyMethod = "close")
     public BrowserLane liveReadinessLane(SsrfRouteGuard ssrfRouteGuard) {
-        return new BrowserLane(ssrfRouteGuard::install);
+        return new BrowserLane("live", 0, ssrfRouteGuard::install);
     }
 }
