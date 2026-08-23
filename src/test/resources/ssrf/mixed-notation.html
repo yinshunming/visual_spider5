@@ -1,0 +1,17 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>SSRF fixture: mixed-notation IP hosts</title>
+</head>
+<body>
+  <h1 id="marker">SSRF mixed-notation page</h1>
+  <ul>
+    <li><a id="link-decimal" href="http://127.1:__PROBE_PORT__/probe">127.1</a></li>
+    <li><a id="link-hex" href="http://0x7f.0.0.1:__PROBE_PORT__/probe">0x7f.0.0.1</a></li>
+    <li><a id="link-int" href="http://2130706433:__PROBE_PORT__/probe">2130706433</a></li>
+  </ul>
+  <img id="probe-decimal" src="http://127.1:__PROBE_PORT__/probe" alt="127.1" />
+  <img id="probe-int" src="http://2130706433:__PROBE_PORT__/probe" alt="2130706433" />
+</body>
+</html>

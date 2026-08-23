@@ -4,10 +4,14 @@ import com.visualspider.visualbrowser.spi.TargetUrlPolicy;
 import java.net.URI;
 import java.util.Locale;
 import java.util.regex.Pattern;
-import org.springframework.stereotype.Component;
 
-/** M2 基础 URL 策略：只校验协议和主机名语法，完整 SSRF 防护留到 M6。 */
-@Component
+/**
+ * M2 基础 URL 语法层：只校验协议和主机名语法（不含 DNS / IP 分类）。
+ *
+ * <p>M6-1 之后由 {@link PublicTargetUrlPolicy} 作为 {@link TargetUrlPolicy} 的 Spring bean
+ * 提供实现，{@code BasicTargetUrlPolicy} 被其内部内嵌复用，作为语法层组件使用；
+ * 单独直接构造仍可用于历史单测 / fallback（M5 单测保持兼容）。
+ */
 public final class BasicTargetUrlPolicy implements TargetUrlPolicy {
 
     private static final Pattern HOST_LABEL =

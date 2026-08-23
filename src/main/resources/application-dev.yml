@@ -19,6 +19,12 @@ seed:
     username: dev-admin
     raw-password: change-me-please-12+
 
+# M6-1：dev profile 豁免回环，本地手工调试 / 跑 fixture 时放行。
+# 仅豁免 loopback，私有/链路本地/保留/元数据地址仍被拦截。
+visualbrowser:
+  target-url:
+    allow-loopback: true
+
 logging:
   level:
     com.visualspider: DEBUG

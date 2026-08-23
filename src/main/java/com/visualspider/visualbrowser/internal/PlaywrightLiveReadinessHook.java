@@ -11,6 +11,7 @@ import com.visualspider.task.domain.TaskDefinition;
 import com.visualspider.task.domain.TaskMode;
 import com.visualspider.task.spi.LiveReadinessHook;
 import com.visualspider.visualbrowser.BrowserLane;
+import com.visualspider.visualbrowser.spi.TargetUrlPolicy;
 import java.util.ArrayList;
 import java.util.List;
 import org.slf4j.Logger;
@@ -43,11 +44,11 @@ public class PlaywrightLiveReadinessHook implements LiveReadinessHook, Disposabl
 
     private final BrowserLane lane;
     private final ExtractionPreview extraction;
-    private final BasicTargetUrlPolicy targetUrlPolicy;
+    private final TargetUrlPolicy targetUrlPolicy;
 
     public PlaywrightLiveReadinessHook(BrowserLane lane,
                                       ExtractionPreview extraction,
-                                      BasicTargetUrlPolicy targetUrlPolicy) {
+                                      TargetUrlPolicy targetUrlPolicy) {
         if (lane == null) {
             throw new IllegalArgumentException("lane 不能为空");
         }

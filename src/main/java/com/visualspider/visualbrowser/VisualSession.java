@@ -1,5 +1,6 @@
 package com.visualspider.visualbrowser;
 
+import com.microsoft.playwright.BrowserContext;
 import com.visualspider.extraction.spi.ExtractionPreview;
 import com.visualspider.extraction.spi.PreviewResult;
 import com.visualspider.task.domain.SelectorType;
@@ -8,6 +9,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletionException;
+import java.util.function.Consumer;
 
 /**
  * 远程浏览器配置会话：绑定一个 BrowserLane + Playwright 控制类 + 帧生产 + 帧缓冲 + 序号守卫。
@@ -29,8 +31,15 @@ public final class VisualSession implements AutoCloseable {
     private volatile ValidationResult validationResult;
 
     public VisualSession(String sessionId, String startUrl) {
+        this(sessionId, startUrl, null);
+    }
+
+    /**
+     * 带 context 自定义回调的构造（spec §D3：配置会话 BrowserContext 同样受 SSRF 路由拦截）。
+     */
+    public VisualSession(String sessionId, String startUrl, Consumer<BrowserContext> contextCustomizer) {
         this.sessionId = sessionId;
-        this.lane = new BrowserLane();
+        this.lane = new BrowserLane(contextCustomizer);
         this.control = new PlaywrightControl(lane);
         this.frameBuffer = new FrameBuffer();
         this.sequencer = new InputSequencer();

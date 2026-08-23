@@ -10,6 +10,7 @@ import com.visualspider.task.spi.TaskCatalog;
 import com.visualspider.task.spi.TaskReadiness;
 import com.visualspider.task.spi.TaskSnapshotFactory;
 import com.visualspider.visualbrowser.BrowserLane;
+import com.visualspider.visualbrowser.SsrfRouteGuard;
 import com.visualspider.visualbrowser.spi.LanePool;
 import com.visualspider.visualbrowser.spi.PacingPolicy;
 import com.visualspider.visualbrowser.spi.TargetUrlPolicy;
@@ -43,9 +44,10 @@ public class RunModuleConfig {
 
     @Bean(destroyMethod = "close")
     public RunLanePool runLanePool(
-            @Value("${run.lane-pool.capacity:3}") int capacity) {
+            @Value("${run.lane-pool.capacity:3}") int capacity,
+            SsrfRouteGuard ssrfRouteGuard) {
         int cap = capacity > 0 ? capacity : RunLanePool.DEFAULT_CAPACITY;
-        return new RunLanePool(cap, i -> new BrowserLane());
+        return new RunLanePool(cap, i -> new BrowserLane(ssrfRouteGuard::install));
     }
 
     @Bean
@@ -67,8 +69,9 @@ public class RunModuleConfig {
     @Bean
     public RunPageHandleProvider runPageHandleProvider(RunLanePool runLanePool,
                                                        RunRepository repository,
-                                                       RunResultSink resultSink) {
-        return new DefaultRunPageHandleProvider(runLanePool, repository, resultSink);
+                                                       RunResultSink resultSink,
+                                                       SsrfRouteGuard ssrfRouteGuard) {
+        return new DefaultRunPageHandleProvider(runLanePool, repository, resultSink, ssrfRouteGuard);
     }
 
     @Bean

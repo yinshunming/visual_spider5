@@ -1,0 +1,13 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>SSRF fixture: direct loopback page</title>
+</head>
+<body>
+  <h1 id="marker">SSRF direct loopback page</h1>
+  <p>This page itself is hosted on the loopback fixture server. Used by
+  SsrfInterceptionIT to assert that under a non-exempt policy the request
+  to load this page is blocked (probe never received).</p>
+</body>
+</html>

@@ -112,6 +112,15 @@
                 <artifactId>spring-boot-maven-plugin</artifactId>
             </plugin>
 
+            <!-- 显式声明源码 / 报告 UTF-8，避免 Windows 默认 GBK 导致中文注释解析失败 -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-compiler-plugin</artifactId>
+                <configuration>
+                    <encoding>UTF-8</encoding>
+                </configuration>
+            </plugin>
+
             <!-- 单元测试：只跑 *Test.java（不跑 *IT.java）；*IT 由 failsafe 接管 -->
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>

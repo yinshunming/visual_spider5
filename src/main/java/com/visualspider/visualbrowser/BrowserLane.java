@@ -12,6 +12,7 @@ import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
+import java.util.function.Consumer;
 import java.util.function.Supplier;
 
 /**
@@ -33,6 +34,7 @@ public final class BrowserLane implements AutoCloseable {
     /** 已提交但尚未完成的命令 future，用于 close 时异常完成挂起命令，避免永久挂起。 */
     private final Set<CompletableFuture<?>> pending = ConcurrentHashMap.newKeySet();
     private final Thread laneThread;
+    private final Consumer<BrowserContext> contextCustomizer;
     private volatile boolean closed = false;
     private PlaywrightResources resources;
 
@@ -44,6 +46,10 @@ public final class BrowserLane implements AutoCloseable {
         final Page page;
 
         PlaywrightResources() {
+            this(null);
+        }
+
+        PlaywrightResources(Consumer<BrowserContext> contextCustomizer) {
             Playwright p = null;
             Browser b = null;
             BrowserContext c = null;
@@ -54,6 +60,9 @@ public final class BrowserLane implements AutoCloseable {
                         new BrowserType.LaunchOptions().setHeadless(true));
                 c = b.newContext(
                         new Browser.NewContextOptions().setViewportSize(1280, 720));
+                if (contextCustomizer != null) {
+                    contextCustomizer.accept(c);
+                }
                 pg = c.newPage();
             } catch (Throwable t) {
                 // 部分初始化失败时按序回收已创建对象，避免遗留 driver/browser 子进程
@@ -80,12 +89,17 @@ public final class BrowserLane implements AutoCloseable {
 
     /** 生产构造器：在 lane 线程上初始化 Chromium（headless，固定视口 1280×720）。 */
     public BrowserLane() {
-        this(PlaywrightResources::new);
+        this((Consumer<BrowserContext>) null);
     }
 
-    /** 测试构造器：自定义 lane 线程启动逻辑，用于不依赖 Chromium 的队列/线程测试。 */
-    BrowserLane(Supplier<?> initializer) {
-        laneThread = new Thread(this::loop, "browser-lane-1");
+    /** 生产构造器：传入在每个新 {@link BrowserContext} 创建后立即执行的回调（SSRF 拦截注册器，spec §D3）。 */
+    public BrowserLane(Consumer<BrowserContext> contextCustomizer) {
+        this(contextCustomizer, PlaywrightResources::new);
+    }
+
+    private BrowserLane(Consumer<BrowserContext> contextCustomizer, Supplier<?> initializer) {
+        this.contextCustomizer = contextCustomizer;
+        laneThread = new Thread(this::loop, "browser-lane");
         laneThread.setDaemon(true);
         laneThread.start();
         submit(() -> {
@@ -95,6 +109,11 @@ public final class BrowserLane implements AutoCloseable {
             }
             return null;
         }).join();
+    }
+
+    /** 测试构造器：自定义 lane 线程启动逻辑，用于不依赖 Chromium 的队列/线程测试。 */
+    BrowserLane(Supplier<?> initializer) {
+        this(null, initializer);
     }
 
     private void loop() {
@@ -120,7 +139,7 @@ public final class BrowserLane implements AutoCloseable {
      * 用于 {@code ConfigLanePoolTest} 等不依赖真实浏览器的测试。
      */
     public static BrowserLane forTest() {
-        return new BrowserLane(() -> null);
+        return new BrowserLane((Supplier<?>) () -> null);
     }
 
     private void dispose() {
@@ -180,12 +199,23 @@ public final class BrowserLane implements AutoCloseable {
      * {@link #submit(java.util.function.Supplier)} 提交操作。
      */
     public Page createRunPage() {
+        return createRunPage(this.contextCustomizer);
+    }
+
+    /**
+     * 同 {@link #createRunPage()}，但使用调用方提供的 context 回调（覆盖 lane 默认；
+     * 用于运行侧需要绑定额外 listener 的场景，spec §D3）。
+     */
+    public Page createRunPage(Consumer<BrowserContext> customizer) {
         if (resources == null) {
             throw new IllegalStateException("BrowserLane 资源未初始化");
         }
         return submit(() -> {
             BrowserContext ctx = resources.browser.newContext(
                     new Browser.NewContextOptions().setViewportSize(1280, 720));
+            if (customizer != null) {
+                customizer.accept(ctx);
+            }
             return ctx.newPage();
         }).join();
     }

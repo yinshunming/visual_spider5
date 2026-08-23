@@ -1,0 +1,15 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>SSRF fixture: subresources to cloud metadata</title>
+</head>
+<body>
+  <h1 id="marker">SSRF subresource metadata page</h1>
+  <img id="meta-img" src="http://169.254.169.254/latest/meta-data/instance-id" alt="metadata" />
+  <script>
+    fetch('http://169.254.169.254/latest/meta-data/', { mode: 'no-cors' })
+      .catch(function (e) { /* expected: metadata is link-local and exempts do NOT cover it */ });
+  </script>
+</body>
+</html>

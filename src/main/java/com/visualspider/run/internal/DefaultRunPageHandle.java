@@ -12,6 +12,7 @@ import com.visualspider.visualbrowser.BrowserLane;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.function.Consumer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -39,14 +40,26 @@ public final class DefaultRunPageHandle implements RunPageHandle {
     private volatile boolean closed;
 
     public DefaultRunPageHandle(BrowserLane lane, long runId) {
-        this(lane, runId, null);
+        this(lane, runId, null, null);
     }
 
     public DefaultRunPageHandle(BrowserLane lane, long runId, PageStopDetector stopDetector) {
+        this(lane, runId, stopDetector, null);
+    }
+
+    /**
+     * M6-1：额外传入 context 自定义回调（SSRF 拦截注册器），用于在 lane 创建 per-run
+     * BrowserContext 后立即注册 route 拦截；为 null 时与原 3 参构造等价。
+     */
+    public DefaultRunPageHandle(BrowserLane lane, long runId,
+                                PageStopDetector stopDetector,
+                                Consumer<BrowserContext> contextCustomizer) {
         this.lane = lane;
         this.runId = runId;
         this.stopDetector = stopDetector;
-        this.page = lane.createRunPage();
+        this.page = contextCustomizer == null
+                ? lane.createRunPage()
+                : lane.createRunPage(contextCustomizer);
     }
 
     @Override

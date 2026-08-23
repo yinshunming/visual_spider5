@@ -1,0 +1,15 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>SSRF fixture: subresources to loopback probe</title>
+</head>
+<body>
+  <h1 id="marker">SSRF subresource loopback page</h1>
+  <img id="probe-img" src="http://127.0.0.1:__PROBE_PORT__/probe" alt="probe" />
+  <script>
+    fetch('http://127.0.0.1:__PROBE_PORT__/probe', { mode: 'no-cors' })
+      .catch(function (e) { /* expected under non-exempt policy */ });
+  </script>
+</body>
+</html>

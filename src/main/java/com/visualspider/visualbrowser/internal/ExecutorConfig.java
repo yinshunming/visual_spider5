@@ -1,6 +1,7 @@
 package com.visualspider.visualbrowser.internal;
 
 import com.visualspider.visualbrowser.BrowserLane;
+import com.visualspider.visualbrowser.SsrfRouteGuard;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import org.springframework.beans.factory.annotation.Value;
@@ -8,7 +9,7 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
 /**
- * 编辑缓冲防抖调度器装配（M2-4 #20）+ 实匹配校验 lane 装配（M4-3 #33）。
+ * 编辑缓冲防抖调度器装配（M2-4 #20）+ 实匹配校验 lane 装配（M4-3 #33 / M6-1）。
  *
  * <p>固定大小 daemon 调度池，供 {@link EditingBuffer} 5 秒防抖保存；应用关闭时调用
  * {@code shutdown()} 静默停止（不强制 await 正在执行的保存，避免阻塞关闭）。
@@ -16,6 +17,7 @@ import org.springframework.context.annotation.Configuration;
  *
  * <p>{@code liveReadinessLane} 供 {@link PlaywrightLiveReadinessHook} 每次 check 创建独立
  * 非持久化 Page（spec §D9）。JVM 单例，与 config lane 池相互独立（避免 live check 与配置会话互相阻塞）。
+ * M6-1：绑 SSRF 路由拦截，所有 readiness check 的请求同样走策略校验。
  */
 @Configuration
 public class ExecutorConfig {
@@ -32,7 +34,7 @@ public class ExecutorConfig {
     }
 
     @Bean(destroyMethod = "close")
-    public BrowserLane liveReadinessLane() {
-        return new BrowserLane();
+    public BrowserLane liveReadinessLane(SsrfRouteGuard ssrfRouteGuard) {
+        return new BrowserLane(ssrfRouteGuard::install);
     }
 }

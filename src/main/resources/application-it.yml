@@ -16,6 +16,12 @@ spring:
     schemas: ${pg.it.schemas:public}
     default-schema: ${pg.it.schemas:public}
 
+# M6-1：IT profile 豁免回环，本地 pg-it fixture（http://localhost）放行；
+# 私有/链路本地/保留/元数据地址仍被拦截。生产 profile（prod）保持 false。
+visualbrowser:
+  target-url:
+    allow-loopback: true
+
 logging:
   level:
     org.flywaydb: INFO
