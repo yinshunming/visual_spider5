@@ -2,6 +2,7 @@ package com.visualspider.run.internal;
 
 import com.visualspider.run.spi.RunExecutor;
 import com.visualspider.run.spi.RunExecutionContext;
+import com.visualspider.run.spi.RunLimits;
 import com.visualspider.run.spi.RunPageHandle;
 import com.visualspider.task.domain.TaskMode;
 import com.visualspider.visualbrowser.spi.LanePool;
@@ -41,12 +42,12 @@ public class RunDispatcher {
 
     /** 兜底轮询间隔（spec §D2 / ADR-0006：5s 兜底轮询）。M3 写死常量；M6 入 system_setting。 */
     private static final long FALLBACK_INTERVAL_SECONDS = 5L;
-    /** 单次运行最大时长（spec §容量：30 分钟）。 */
-    private static final long MAX_DURATION_MS = TimeUnit.MINUTES.toMillis(30);
-    /** 单次运行最大页数（spec §容量：200）。 */
-    private static final int MAX_PAGES = 200;
-    /** 单次运行最大结果数（spec §容量：10,000）。 */
-    private static final int MAX_RECORDS = 10_000;
+    /** 单次运行最大时长（spec §容量）。M6-5：从 {@link RunLimits} 收敛，不再内联常量。 */
+    private static final long MAX_DURATION_MS = RunLimits.MAX_DURATION.toMillis();
+    /** 单次运行最大页数（spec §容量）。M6-5：从 {@link RunLimits} 收敛。 */
+    private static final int MAX_PAGES = RunLimits.MAX_PAGES;
+    /** 单次运行最大结果数（spec §容量）。M6-5：从 {@link RunLimits} 收敛。 */
+    private static final int MAX_RECORDS = RunLimits.MAX_RECORDS;
 
     private final LanePool lanePool;
     private final RunRepository repository;

@@ -232,5 +232,37 @@
                 </plugins>
             </build>
         </profile>
+
+        <!--
+          pg-stress (M6-5 / spec §D10)：压测套件,仅跑 *StressIT 类。
+          DSN 同样通过 -Dpg.it.url=... 等提供;未提供时 failsafe 跳过。
+          独立 IT 目录或 include 规则在 pom 中显式声明(避免污染常规 pg-it)。
+        -->
+        <profile>
+            <id>pg-stress</id>
+            <properties>
+                <skipITs>false</skipITs>
+            </properties>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-failsafe-plugin</artifactId>
+                        <configuration>
+                            <skipITs>${skipITs}</skipITs>
+                            <includes>
+                                <include>**/*StressIT.java</include>
+                            </includes>
+                            <systemPropertyVariables>
+                                <pg.it.url>${pg.it.url}</pg.it.url>
+                                <pg.it.username>${pg.it.username}</pg.it.username>
+                                <pg.it.password>${pg.it.password}</pg.it.password>
+                                <pg.it.schemas>${pg.it.schemas}</pg.it.schemas>
+                            </systemPropertyVariables>
+                        </configuration>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
     </profiles>
 </project>
