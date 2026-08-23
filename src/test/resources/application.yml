@@ -16,10 +16,13 @@ seed:
 skipITs: true
 
 # M3-2 (#24) 启动恢复 + 派发器在无 DB 的测试环境关闭，避免阻塞 context 加载
+# M6-2: 单实例 guard 同理 -- 仅 it profile + 生产环境启用，常规单测无 PG 关闭
 run:
   recovery:
     enabled: false
   dispatcher:
+    enabled: false
+  single-instance:
     enabled: false
 
 # M6-1：测试默认 classpath 同样豁免回环（VisualBrowserIT 等用 file:/ 或 localhost fixture）；
