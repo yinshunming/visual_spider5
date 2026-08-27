@@ -2,8 +2,8 @@
 
 面向小团队私有部署的零安装 Web 可视化网页采集工具。
 
-> ⚠️ **HTTP 明文传输警告**：本项目首版**不内置 HTTPS**，所有凭据、Cookie、页面内容以明文在网络中传输。
-> **必须**把应用部署在可信 LAN / VPN 内，禁止直接暴露到公网。生产部署请在反向代理层（私有网络内 Nginx / Caddy）终止 TLS。
+> ⚠ **HTTP 明文传输警告**：本项目首版**不内置 HTTPS**，所有凭据、Cookie、页面内容以明文在网络中传输。
+> **必须**把应用部署在可信 LAN / VPN 内，禁止直接暴露到公网。
 
 ## 规划文档
 
@@ -12,24 +12,23 @@
 - [里程碑路线图](./docs/roadmap.md)
 - [领域词汇](./CONTEXT.md)
 - [架构决策记录](./docs/adr/)
-- [M1 Spec（当前里程碑）](./docs/specs/m1.md)
+- [M7 Spec（首版收尾）](./docs/specs/m7.md)
 
-## 技术栈（版本锁）
+## 部署（首版 `v0.1.0`）
 
-M1 起固定以下版本；后续里程碑遵守同一矩阵，不在 M2+ 重新选型：
+部署形态 = 单个可执行 JAR（Spring Boot 内嵌 Tomcat） + 同机 PostgreSQL 16；不引入 Docker / Nginx / 反向代理 / 多实例。
 
-| 维度 | 版本 |
-| - | - |
-| JDK | 21.0.11 LTS |
-| Maven | 3.9.11（由 Maven Wrapper 携带） |
-| Spring Boot | 3.4.13 |
-| Playwright Java | 1.61.0 |
-| PostgreSQL | 16 |
-| Flyway | 10.x |
-| Vue | 3.5.x |
-| Vite | 6.x |
-| TypeScript | 5.6.x |
-| Node | v22.14.0 |
+- **平台特定步骤**：[`docs/deploy/windows.md`](./docs/deploy/windows.md)（M7-1）、`docs/deploy/linux.md`（M7-2）
+- **环境变量与配置参考**：[`docs/deploy/configuration.md`](./docs/deploy/configuration.md)
+- **备份 / 恢复 / 升级**：[`docs/deploy/backup-restore-upgrade.md`](./docs/deploy/backup-restore-upgrade.md)（M7-3）
+- **发布说明与已知限制**：`docs/deploy/release-notes-v0.1.0.md`（M7-5）
+
+> 版本锁矩阵（JDK / Spring Boot / Playwright / PostgreSQL 等）已迁移至 [`configuration.md` §6](./docs/deploy/configuration.md)。
+> 首版不内置 HTTPS；TLS 终止属于首版后候选（roadmap §12），不在本版本部署形态内。
+
+## 技术栈概览
+
+固定 Java + Spring Boot + Vue 3 + Playwright for Java + PostgreSQL + Maven Wrapper；由根构建先构建前端，再由 Spring Boot 提供静态资源，最终交付一个可执行 JAR。
 
 不引入：Docker / Testcontainers / Redis / Nginx / Elasticsearch / 任何新外部依赖。
 PostgreSQL 是唯一外部基础设施。
