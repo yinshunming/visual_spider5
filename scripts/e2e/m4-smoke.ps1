@@ -116,7 +116,10 @@ function Start-AppJar {
         if ($LASTEXITCODE -ne 0) { Fail 'mvn package 失败' }
     }
     $script:AppProc = Start-Process -FilePath 'java' `
-        -ArgumentList @('-jar', $JarPath) `
+        -ArgumentList @(
+            '-jar', $JarPath,
+            '--visualbrowser.target-url.allow-loopback=true'
+        ) `
         -RedirectStandardOutput $AppOutLog `
         -RedirectStandardError $AppErrLog `
         -NoNewWindow -PassThru

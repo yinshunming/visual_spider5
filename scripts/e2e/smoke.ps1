@@ -55,7 +55,10 @@ if (-not (Test-Path 'target/visual-spider5-0.0.1-SNAPSHOT.jar')) {
 # ---- 2. 启动 JAR ----
 Step 2 '启动应用并等待健康检查'
 New-Item -ItemType Directory -Force -Path logs | Out-Null
-$proc = Start-Process -FilePath 'java' -ArgumentList @('-jar', 'target/visual-spider5-0.0.1-SNAPSHOT.jar') `
+$proc = Start-Process -FilePath 'java' -ArgumentList @(
+    '-jar', 'target/visual-spider5-0.0.1-SNAPSHOT.jar',
+    '--visualbrowser.target-url.allow-loopback=true'
+) `
     -RedirectStandardOutput 'logs/app.out.log' -RedirectStandardError 'logs/app.err.log' -NoNewWindow -PassThru
 Info "PID: $($proc.Id)"
 

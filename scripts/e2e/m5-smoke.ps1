@@ -141,6 +141,7 @@ try {
     $script:AppProc = Start-Process -FilePath 'java' -ArgumentList @(
         '-jar', $JarPath,
         '--spring.profiles.active=smoke',
+        '--visualbrowser.target-url.allow-loopback=true',
         "--server.port=$($BaseUrl -replace 'http://localhost:', '')"
     ) -PassThru -RedirectStandardOutput $AppOutLog -RedirectStandardError $AppErrLog
     Set-Content -Path $AppPidFile -Value $script:AppProc.Id
