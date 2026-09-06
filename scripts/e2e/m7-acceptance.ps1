@@ -9,7 +9,7 @@
 #
 # 参数：
 #   -BaseUrl          默认 http://localhost:8080
-#   -JarPath          默认 target/visual-spider5-0.0.1-SNAPSHOT.jar
+#   -JarPath          默认 target/visual-spider5-0.1.0.jar（可由 $Env:VISUALSPIDER_JAR_PATH 覆盖）
 #   -FixturePort      默认 18080
 #   -FixtureDir       默认 src/test/resources（包含 pagination/ + content-page/ + ssrf/）
 #   -LoopbackAllowed  默认 true（脚本注释与 docs/deploy/configuration.md §3 标注"仅测试"）
@@ -24,7 +24,7 @@
 [CmdletBinding()]
 param(
     [string]$BaseUrl = 'http://localhost:8080',
-    [string]$JarPath = (Join-Path (Get-Location) 'target/visual-spider5-0.0.1-SNAPSHOT.jar'),
+    [string]$JarPath = $Env:VISUALSPIDER_JAR_PATH ?? (Join-Path (Get-Location) 'target/visual-spider5-0.1.0.jar'),
     [int]$FixturePort = 18080,
     [string]$FixtureDir = (Join-Path (Get-Location) 'src/test/resources'),
     [bool]$LoopbackAllowed = $true,

@@ -9,7 +9,7 @@
 #
 # 环境变量：
 #   BASE_URL         默认 http://localhost:8080
-#   JAR_PATH         默认 target/visual-spider5-0.0.1-SNAPSHOT.jar
+#   JAR_PATH         默认 target/visual-spider5-0.1.0.jar（可由 $VISUALSPIDER_JAR_PATH 覆盖）
 #   FIXTURE_PORT     默认 18080
 #   FIXTURE_DIR      默认 src/test/resources
 #   LOOPBACK_ALLOWED 默认 true（仅测试；文档与脚本注释均标注）
@@ -25,7 +25,7 @@ set -euo pipefail
 
 BASE_URL="${BASE_URL:-http://localhost:8080}"
 PROJECT_ROOT="$(pwd)"
-JAR_PATH="${JAR_PATH:-$PROJECT_ROOT/target/visual-spider5-0.0.1-SNAPSHOT.jar}"
+JAR_PATH="${JAR_PATH:-${VISUALSPIDER_JAR_PATH:-$PROJECT_ROOT/target/visual-spider5-0.1.0.jar}}"
 FIXTURE_PORT="${FIXTURE_PORT:-18080}"
 FIXTURE_DIR="${FIXTURE_DIR:-$PROJECT_ROOT/src/test/resources}"
 LOOPBACK_ALLOWED="${LOOPBACK_ALLOWED:-true}"

@@ -49,7 +49,7 @@ Set-Location $ProjectRoot
 
 # ============================== 路径与全局变量 ==============================
 
-$JarPath = Join-Path $ProjectRoot 'target/visual-spider5-0.0.1-SNAPSHOT.jar'
+$JarPath = if ($Env:VISUALSPIDER_JAR_PATH) { $Env:VISUALSPIDER_JAR_PATH } else { Join-Path $ProjectRoot 'target/visual-spider5-0.1.0.jar' }
 $LogDir = Join-Path $ProjectRoot 'logs'
 $AppOutLog = Join-Path $LogDir 'm5-app.out.log'
 $AppErrLog = Join-Path $LogDir 'm5-app.err.log'

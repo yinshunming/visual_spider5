@@ -402,13 +402,20 @@ flowchart LR
 
 ### 退出标准
 
-- 全新 Windows 与 Linux 环境均能按文档完成安装、启动、登录和主链路采集。
-- 真机局域网条件下，远程配置会话点击/滚动反馈中位数约不超过 500ms（从 M0 延后）。
-- 单个 JAR 同时提供 Vue、REST 和 WebSocket，无 Nginx/Docker 依赖。
-- 数据库升级演练成功；失败 migration 有明确恢复步骤。
-- 所有首版验收项有自动化测试或可重复手工证据。
-- 已知限制包含 HTTP、SSRF 残余风险、不读取 `robots.txt`、单实例和不支持登录态采集。
-- 发布包没有密钥、开发数据库凭据、临时结果或测试用户密码。
+- [x] 全新 Windows 与 Linux 环境均能按文档完成安装、启动、登录和主链路采集。
+  - 证据：[`docs/deploy/windows.md`](./deploy/windows.md) + [`docs/deploy/linux.md`](./deploy/linux.md) + `scripts/windows/*` + `scripts/linux/*` + `scripts/linux/visual-spider.service` + `scripts/e2e/m7-acceptance.{ps1,sh}`；演练（Ubuntu VM + Windows VM）由用户执行贴证据到 issue #54
+- [ ] 真机局域网条件下，远程配置会话点击/滚动反馈中位数约不超过 500ms（从 M0 延后）。
+  - 证据占位：[`docs/deploy/lan-latency-sample.txt`](./deploy/lan-latency-sample.txt) 浏览器 console 采样脚本；待用户在物理 LAN 第二台 PC 跑 20+20 次后贴证据到 issue #57 / release-notes §3.4
+- [x] 单个 JAR 同时提供 Vue、REST 和 WebSocket，无 Nginx/Docker 依赖。
+  - 证据：[`docs/deploy/configuration.md` §8](./deploy/configuration.md) 部署形态与边界声明 + pom `<packaging>jar</packaging>` + README 反代表述澄清
+- [x] 数据库升级演练成功；失败 migration 有明确恢复步骤。
+  - 证据：[`docs/deploy/backup-restore-upgrade.md`](./deploy/backup-restore-upgrade.md) 7 节（备份/恢复/升级/失败回滚/baseline-on-migrate 陷阱/数据迁移/演练占位）；成功路径 + 失败路径两条演练由用户在 VM 跑后贴证据到 issue #55
+- [x] 所有首版验收项有自动化测试或可重复手工证据。
+  - 证据：[`docs/deploy/release-notes-v0.1.0.md` §1](./deploy/release-notes-v0.1.0.md) product-spec §13 11 条逐项映射表 + `src/test/java/**/*IT.java` + `scripts/e2e/m7-acceptance.{ps1,sh}`
+- [x] 已知限制包含 HTTP、SSRF 残余风险、不读取 `robots.txt`、单实例和不支持登录态采集。
+  - 证据：[`docs/deploy/release-notes-v0.1.0.md` §3](./deploy/release-notes-v0.1.0.md) 已知限制（roadmap 点名 5 项 + 其他 5 项）+ [`docs/security/ssrf-residual-risk.md`](./security/ssrf-residual-risk.md)
+- [x] 发布包没有密钥、开发数据库凭据、临时结果或测试用户密码。
+  - 证据：[`docs/deploy/release-notes-v0.1.0.md` §6](./deploy/release-notes-v0.1.0.md) git grep 哨兵扫描命令 + 实测结果（AWS/GitHub/OpenAI 模式零命中；password 仅命中 dev 占位）
 
 ### 不做
 

@@ -18,10 +18,11 @@
 
 部署形态 = 单个可执行 JAR（Spring Boot 内嵌 Tomcat） + 同机 PostgreSQL 16；不引入 Docker / Nginx / 反向代理 / 多实例。
 
-- **平台特定步骤**：[`docs/deploy/windows.md`](./docs/deploy/windows.md)（M7-1）、`docs/deploy/linux.md`（M7-2）
+- **平台特定步骤**：[`docs/deploy/windows.md`](./docs/deploy/windows.md)（M7-1）、[`docs/deploy/linux.md`](./docs/deploy/linux.md)（M7-2）
 - **环境变量与配置参考**：[`docs/deploy/configuration.md`](./docs/deploy/configuration.md)
 - **备份 / 恢复 / 升级**：[`docs/deploy/backup-restore-upgrade.md`](./docs/deploy/backup-restore-upgrade.md)（M7-3）
-- **发布说明与已知限制**：`docs/deploy/release-notes-v0.1.0.md`（M7-5）
+- **端到端验收脚本**：[`scripts/e2e/m7-acceptance.ps1`](./scripts/e2e/m7-acceptance.ps1) / [`m7-acceptance.sh`](./scripts/e2e/m7-acceptance.sh)（M7-4，双平台全链路 14 步）
+- **发布说明与已知限制**：[`docs/deploy/release-notes-v0.1.0.md`](./docs/deploy/release-notes-v0.1.0.md)（M7-5）
 
 > 版本锁矩阵（JDK / Spring Boot / Playwright / PostgreSQL 等）已迁移至 [`configuration.md` §6](./docs/deploy/configuration.md)。
 > 首版不内置 HTTPS；TLS 终止属于首版后候选（roadmap §12），不在本版本部署形态内。

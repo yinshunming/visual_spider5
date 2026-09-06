@@ -52,7 +52,7 @@ Write-Host "[OK]   admin 凭据已配置"
 New-Item -ItemType Directory -Force -Path logs | Out-Null
 
 # 5. 构建可执行 JAR（如不存在）
-$jarPath = Join-Path $ProjectRoot 'target/visual-spider5-0.0.1-SNAPSHOT.jar'
+$jarPath = if ($Env:VISUALSPIDER_JAR_PATH) { $Env:VISUALSPIDER_JAR_PATH } else { Join-Path $ProjectRoot 'target/visual-spider5-0.1.0.jar' }
 if (-not (Test-Path $jarPath)) {
     Write-Host "[INFO] 未找到 JAR，开始构建..."
     & ./mvnw package -DskipTests 2>&1 | Out-Null

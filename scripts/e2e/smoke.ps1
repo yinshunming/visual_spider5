@@ -47,7 +47,7 @@ if (-not $env:VISUALSPIDER_DATASOURCE_USERNAME) { $env:VISUALSPIDER_DATASOURCE_U
 if (-not $env:VISUALSPIDER_DATASOURCE_PASSWORD) { $env:VISUALSPIDER_DATASOURCE_PASSWORD = 'visualspider' }
 Info "PG DSN: $env:VISUALSPIDER_DATASOURCE_URL"
 
-if (-not (Test-Path 'target/visual-spider5-0.0.1-SNAPSHOT.jar')) {
+if (-not (Test-Path 'target/visual-spider5-0.1.0.jar')) {
     Info '构建 JAR...'
     & ./mvnw package -DskipTests | Out-Null
 }
@@ -55,8 +55,9 @@ if (-not (Test-Path 'target/visual-spider5-0.0.1-SNAPSHOT.jar')) {
 # ---- 2. 启动 JAR ----
 Step 2 '启动应用并等待健康检查'
 New-Item -ItemType Directory -Force -Path logs | Out-Null
+$JarPath = if ($Env:VISUALSPIDER_JAR_PATH) { $Env:VISUALSPIDER_JAR_PATH } else { 'target/visual-spider5-0.1.0.jar' }
 $proc = Start-Process -FilePath 'java' -ArgumentList @(
-    '-jar', 'target/visual-spider5-0.0.1-SNAPSHOT.jar',
+    '-jar', $JarPath,
     '--visualbrowser.target-url.allow-loopback=true'
 ) `
     -RedirectStandardOutput 'logs/app.out.log' -RedirectStandardError 'logs/app.err.log' -NoNewWindow -PassThru

@@ -34,7 +34,7 @@ fi
 ok "admin 凭据已配置"
 
 # 3. 构建 JAR（如不存在）
-JAR_PATH="$PROJECT_ROOT/target/visual-spider5-0.0.1-SNAPSHOT.jar"
+JAR_PATH="${VISUALSPIDER_JAR_PATH:-$PROJECT_ROOT/target/visual-spider5-0.1.0.jar}"
 if [ ! -f "$JAR_PATH" ]; then
     info "未找到 JAR，开始构建..."
     ./mvnw package -DskipTests >/dev/null
