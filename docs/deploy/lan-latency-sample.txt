@@ -1,0 +1,93 @@
+Visual Spider 5 — LAN 延迟采样脚本草稿（M7-5 / docs/specs/m7.md D7）
+====================================================================
+
+> 本文件提供 LAN 真机延迟采样的浏览器 console 脚本草稿。
+> Agent 不执行（必须在物理 LAN 第二台 PC 上手工跑）；用户跑完后把 20+20 次原始数值贴回 issue #57 / release-notes-v0.1.0.md §3.4。
+> 目标：点击 / 滚动命令发出到下一帧到达的 RTT 中位数 ≤ 500ms。
+
+前置
+----
+
+- 一台运行 visual-spider5 的 Linux/Windows 服务器（部署形态见 docs/deploy/）
+- 一台同 LAN 的 PC，浏览器打开配置会话页面（采集人员身份登录）
+- 帧通道使用既有 WS 协议；每条命令的 server-time → 下一帧 client-render 的差即为 RTT
+
+采样脚本（粘到浏览器 DevTools Console，配置会话打开后）
+-----------------------------------------------------
+
+(function () {
+  'use strict';
+  if (!window.__VS5_WS) {
+    console.error('[LAN-RTT] 未找到帧 WebSocket；请在配置会话页面运行');
+    return;
+  }
+  var ws = window.__VS5_WS;
+  if (!ws.__baselineAttached) {
+    ws.addEventListener('message', function (ev) {
+      var msg;
+      try { msg = JSON.parse(ev.data); } catch (e) { return; }
+      if (!msg || !msg.frameSeq || !msg.serverTimeMs) return;
+      // 找最后一条 click/scroll 命令的 clientTime
+      var lastCmd = window.__VS5_LAST_CMD;
+      if (!lastCmd) return;
+      var rtt = msg.serverTimeMs - lastCmd.clientTimeMs;
+      console.log('[LAN-RTT] ' + lastCmd.kind + ' seq=' + msg.frameSeq + ' rtt=' + rtt + 'ms');
+      window.__VS5_RTTS.push(rtt);
+      window.__VS5_LAST_CMD = null;
+    });
+    ws.__baselineAttached = true;
+  }
+  window.__VS5_RTTS = window.__VS5_RTTS || [];
+  window.__VS5_LAST_CMD = null;
+  console.log('[LAN-RTT] 就绪；sendClick 与 sendScroll 函数已注册（执行 20+20 次后调用 summary）');
+})();
+
+function sendClick() {
+  if (!window.__VS5_WS) { console.error('no ws'); return; }
+  var t = Date.now();
+  window.__VS5_LAST_CMD = { kind: 'click', clientTimeMs: t };
+  window.__VS5_WS.send(JSON.stringify({ type: 'CLICK', x: 200, y: 200, clientTimeMs: t }));
+}
+
+function sendScroll() {
+  if (!window.__VS5_WS) { console.error('no ws'); return; }
+  var t = Date.now();
+  window.__VS5_LAST_CMD = { kind: 'scroll', clientTimeMs: t };
+  window.__VS5_WS.send(JSON.stringify({ type: 'SCROLL', dx: 0, dy: 200, clientTimeMs: t }));
+}
+
+function summary() {
+  var arr = window.__VS5_RTTS || [];
+  if (arr.length === 0) { console.log('no samples'); return; }
+  var sorted = arr.slice().sort(function (a, b) { return a - b; });
+  var median = sorted[Math.floor(sorted.length / 2)];
+  var p95 = sorted[Math.floor(sorted.length * 0.95)];
+  var max = sorted[sorted.length - 1];
+  console.log('[LAN-RTT] n=' + arr.length + ' median=' + median + 'ms p95=' + p95 + 'ms max=' + max + 'ms');
+  console.log('[LAN-RTT] raw=' + JSON.stringify(arr));
+  console.log('[LAN-RTT] 目标 median ≤ 500ms；' + (median <= 500 ? '达标' : '未达标，按性能 bug 开 issue'));
+}
+
+使用步骤
+--------
+
+1. 物理 LAN 第二台 PC 浏览器打开 http://<server>:8080/，采集人员账号登录
+2. 打开一个配置会话（任一任务）
+3. F12 打开 DevTools → Console → 粘贴"采样脚本"
+4. 在远程页面任意位置连续执行 sendClick() 20 次（每次等下一帧到达再执行下一次）
+5. 连续执行 sendScroll() 20 次（同样等帧）
+6. 执行 summary() 打印中位数 / p95 / max / 原始数组
+7. 复制原始数组贴回 issue #57 "原始数值" 段
+
+判定
+----
+
+- median ≤ 500ms → 达标，release-notes §3.4 标注"已验收"
+- median > 500ms → 按性能 bug 开独立 issue（不在 M7 发布工单内修复）；release-notes §3.4 标注"未达标，bug #<n>"
+
+约束
+----
+
+- 不要在远程浏览器本身（第一台）采样——VNC/RDP/Chromium remote debug 都加噪声，必须用第二台独立 PC 浏览器。
+- 控制台采样脚本仅供本里程碑验收用，不进入产品代码。
+- 帧序号与时间戳协议细节见 src/main/java/com/visualspider/visualbrowser/internal/FrameChannel.java（M2 spec §D16）。
