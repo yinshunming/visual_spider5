@@ -1,0 +1,58 @@
+# Visual Spider 5 — systemd unit（M7-2 / docs/specs/m7.md D1）
+#
+# 安装方法：
+#   sudo cp scripts/linux/visual-spider.service /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable visual-spider.service   # 开机自启
+#   sudo systemctl start  visual-spider.service   # 立即启动
+#
+# 与脚本路径（start.sh / stop.sh）的关系：
+#   - systemd 路径：开机自启 + 崩溃自动重启 + journalctl 集成（推荐）
+#   - 脚本路径：手动启停 / 不开机的环境 / 排障
+#   两条路径不冲突；systemd 启动后 PID 文件由 start.sh 维护，
+#   可用 ./status.sh / ./logs.sh 查看运行状态与日志（logs/app.out.log 与 StandardOutput 同源）。
+#
+# 注意：Type=simple + StandardOutput=append: 是 systemd 写法，journal 镜像同步可查（journalctl -u visual-spider）。
+
+[Unit]
+Description=Visual Spider 5 (首版 v0.1.0)
+Documentation=https://github.com/yinshunming/visual-spider5
+After=network.target postgresql.service
+Wants=postgresql.service
+
+[Service]
+Type=simple
+User=visualspider
+Group=visualspider
+WorkingDirectory=/opt/visual-spider
+
+# 环境变量文件由配置管理员维护（参考 docs/deploy/configuration.md §1）
+EnvironmentFile=/opt/visual-spider/config/visual-spider.env
+
+# 显式 Playwright 浏览器路径 0 = 装到 systemd 用户 HOME（/opt/visual-spider/.cache/ms-playwright）
+Environment=PLAYWRIGHT_BROWSERS_PATH=0
+
+ExecStart=/usr/bin/java -jar /opt/visual-spider/app.jar
+
+# 优雅停止：SIGTERM → Java shutdown hook → 30s 后 SIGKILL
+# 单实例 advisory lock 释放依赖 PG 会话超时（M6-2 / docs/adr/0007）
+KillMode=mixed
+KillSignal=SIGTERM
+TimeoutStopSec=30
+SuccessExitStatus=143
+
+# 崩溃自动重启
+Restart=on-failure
+RestartSec=5
+StartLimitBurst=5
+StartLimitIntervalSec=60
+
+# 日志输出（与 logs/app.out.log / app.err.log 同源；journal 镜像可由 journalctl -u visual-spider 查）
+StandardOutput=append:/opt/visual-spider/logs/app.out.log
+StandardError=append:/opt/visual-spider/logs/app.err.log
+
+# 资源限制（首版保守值；后续可经 admin REST 调）
+LimitNOFILE=65536
+
+[Install]
+WantedBy=multi-user.target
