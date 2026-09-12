@@ -15,6 +15,7 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.server.LocalServerPort;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.test.context.TestPropertySource;
 import org.springframework.web.socket.BinaryMessage;
 import org.springframework.web.socket.CloseStatus;
 import org.springframework.web.socket.TextMessage;
@@ -43,6 +44,9 @@ import org.springframework.web.socket.server.standard.ServletServerContainerFact
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
         classes = {com.visualspider.Application.class, InboundGuardIT.TestWsConfig.class})
+@TestPropertySource(properties = "visualbrowser.target-url.allow-loopback=false")
+// M8-3: 覆盖 allow-loopback=false 避免 LoopbackStartupFailFastValidator 误触发 fail-fast。
+// InboundGuardIT 没有 @ActiveProfiles("it")，因此需要显式覆盖 property。
 class InboundGuardIT {
 
     @LocalServerPort
