@@ -270,6 +270,6 @@ curl http://localhost:8080/actuator/health
 - 单实例；同一业务数据库禁止两 JAR 并存（`SingleInstanceGuard`，M6-2）。
 - 无 HTTPS；不内置 TLS 终止。
 - 无 UI 配置面板；`retention.days` 经 admin REST 调整。
-- systemd `Restart=on-failure` 不重启 OOM-killed 进程（OOM 视同非失败）；遇 OOM 须人工调查内存配置。
+- systemd `Restart=on-failure` 不重启 OOM-killed 进程（OOM 视同非失败）；OOM-killed 由内核发出 SIGKILL（exit code 137），unit 已通过 `RestartPreventExitStatus=137` 显式排除该退出码（v0.1.1 起，见 `scripts/linux/visual-spider.service` [Service] 段）。遇 OOM 须人工调查内存配置（`journalctl -u visual-spider` 查 SIGKILL 时间点、`dmesg | grep -i oom` 查 killer 决策）。
 
 完整已知限制见 `docs/deploy/release-notes-v0.1.0.md`（M7-5 出稿后引用）。
