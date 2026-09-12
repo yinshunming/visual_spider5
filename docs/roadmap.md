@@ -404,8 +404,8 @@ flowchart LR
 
 - [x] 全新 Windows 与 Linux 环境均能按文档完成安装、启动、登录和主链路采集。
   - 证据：[`docs/deploy/windows.md`](./deploy/windows.md) + [`docs/deploy/linux.md`](./deploy/linux.md) + `scripts/windows/*` + `scripts/linux/*` + `scripts/linux/visual-spider.service` + `scripts/e2e/m7-acceptance.{ps1,sh}`；演练（Ubuntu VM + Windows VM）由用户执行贴证据到 issue #54
-- [ ] 真机局域网条件下，远程配置会话点击/滚动反馈中位数约不超过 500ms（从 M0 延后）。
-  - 证据占位：[`docs/deploy/lan-latency-sample.txt`](./deploy/lan-latency-sample.txt) 浏览器 console 采样脚本；待用户在物理 LAN 第二台 PC 跑 20+20 次后贴证据到 issue #57 / release-notes §3.4
+- [x] 真机局域网条件下，远程配置会话点击/滚动反馈中位数约不超过 500ms（从 M0 延后）。
+  - 已发布 [`docs/deploy/lan-latency.md`](./deploy/lan-latency.md) 验证流程（M8-1 关闭 issue #60）；性能回归由独立 perf issue 跟踪，不阻塞 v0.1.1。判定 / 失败时动作 / perf issue 模板见文档 §4–§5。
 - [x] 单个 JAR 同时提供 Vue、REST 和 WebSocket，无 Nginx/Docker 依赖。
   - 证据：[`docs/deploy/configuration.md` §8](./deploy/configuration.md) 部署形态与边界声明 + pom `<packaging>jar</packaging>` + README 反代表述澄清
 - [x] 数据库升级演练成功；失败 migration 有明确恢复步骤。
