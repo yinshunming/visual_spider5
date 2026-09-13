@@ -42,7 +42,10 @@ TimeoutStopSec=30
 SuccessExitStatus=143
 
 # 崩溃自动重启
+# OOM-killed（SIGKILL by 内核 OOM killer，exit 137）视同内存压力真实存在，不触发 Restart=on-failure。
+# 详见 systemd 文档 RestartPreventExitStatus；与 docs/deploy/linux.md §15 一致。
 Restart=on-failure
+RestartPreventExitStatus=137
 RestartSec=5
 StartLimitBurst=5
 StartLimitIntervalSec=60
