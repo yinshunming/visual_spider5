@@ -114,5 +114,5 @@ LAN 帧 RTT 中位数 > 500ms（v0.1.1 LAN 验证）
 
 - 不要在远程浏览器本身（第一台）采样 — VNC / RDP / Chromium remote debug 都加噪声，必须用第二台独立 PC 浏览器。
 - 控制台采样脚本仅供本里程碑验收用，不进入产品代码。
-- 帧序号与时间戳协议细节见 [`src/main/java/com/visualspider/visualbrowser/internal/FrameChannel.java`](../../src/main/java/com/visualspider/visualbrowser/internal/FrameChannel.java)（M2 spec §D16）。
+- 帧序号与时间戳协议字段以浏览器 devtools 实测为准：本采样脚本假设每帧 WS 消息携带 `frameSeq` + `serverTimeMs`（与 [`docs/specs/m2.md`](../specs/m2.md) §D4 WebSocket 帧通道同源），实际字段名以配置会话页 WS 消息为准，必要时按实样微调脚本。
 - 本文档由 [`docs/specs/m8.md`](../specs/m8.md) D1 落地；旧脚本草稿 `lan-latency-sample.txt` 已在 M8-1 中删除（[`docs/roadmap.md`](../roadmap.md) §11 LAN 退出标准 `[x]` + 理由行）。
