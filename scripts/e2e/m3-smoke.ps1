@@ -105,6 +105,7 @@ function Start-AppJar {
     $script:AppProc = Start-Process -FilePath 'java' `
         -ArgumentList @(
             '-jar', $JarPath,
+            '--spring.profiles.active=smoke',
             '--visualbrowser.target-url.allow-loopback=true'
         ) `
         -RedirectStandardOutput $AppOutLog `

@@ -87,3 +87,7 @@ _Avoid_: 主备、多实例、只读副本
 **内容页字段**：
 从 [[内容页]] DOM 中抽取的 [[采集字段]]，与列表项字段同名时按字段名合并到同一 [[结果记录]]。区别于 [[列表页字段]]：内容页字段的内容来自一层内容页，且只在 [[列表采集]] 中存在；[[单页采集]] 不引入此区分。在 M5 的 `FieldDefinition.scope=CONTENT` 路径下使用；内容页 navigate 失败时该字段最终为 null，但对应 record 仍按 [[列表页字段]] 写入 `record_count_final`，并计入 `content_fail_count`。
 _Avoid_: 二级字段、详情字段、补充字段
+
+**StartupFailFastValidator**：
+v0.1.1 起（M8-3）在 Spring Bean 创建期（早于端口绑定）强制校验 [[公网目标]] 的启动期配置。当 `visualbrowser.target-url.allow-loopback=true` 且激活 profile 不在 `dev` / `it` / `smoke` / `e2e` 之列 → 抛 `IllegalStateException` 让进程退出非零。生产误配 loopback 豁免由此在启动第一行就暴露，而不是延后到首次 SSRF 触发才报错。运行时 SSRF 拦截仍由 [[公网目标]] / `PublicTargetUrlPolicy` 负责，本类只补一层启动期防御。详见 [`docs/specs/m8.md`](docs/specs/m8.md) D3 与 [`docs/security/ssrf-residual-risk.md`](docs/security/ssrf-residual-risk.md) "启动期 fail-fast" 段。
+_Avoid_: runtime policy、运行时校验、端口绑定后 fail

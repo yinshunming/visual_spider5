@@ -49,6 +49,7 @@ VISUALSPIDER_DATASOURCE_URL=jdbc:postgresql://<host>:<port>/<database>
 - 私有 / 链路本地 / 保留 / 云元数据地址仍被拦截（详见 `IpAddressClassifier`）。
 - **生产严禁开启** —— 开启等同于放弃回环 SSRF 防护（M6-1 D4 决策）。
 - 用途：本地 fixture 测试、M7-4 acceptance 脚本（`python -m http.server` 本地 fixture）。
+- **v0.1.1 起启动期 fail-fast**（M8-3）：当激活 profile 不在 `dev` / `it` / `smoke` / `e2e` 之列且本参数为 `true`，Spring 启动期直接抛 `IllegalStateException` 并退出非零，让 prod 误配在启动第一行就暴露。实现见 [`LoopbackStartupFailFastValidator`](../../src/main/java/com/visualspider/shared/config/LoopbackStartupFailFastValidator.java)。
 
 测试用法示例（验收脚本）：
 

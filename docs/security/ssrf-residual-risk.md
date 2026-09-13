@@ -143,3 +143,23 @@ sinkhole：把 RFC 1918 / CGNAT / 链路本地 / TEST-NET 地址段全部解析�
   导航 / 子资源发起阶段就 abort，pacing 计数器不会被消耗。
 - `PageStopDetector` 的 429 / 403 / 验证码检测独立运行；SSRF 拦截不会触发
   它的 STOP_* 事件，因为阻断原因不属于"被目标拒绝"。
+
+## 6. v0.1.1+ 启动期 fail-fast（M8-3）
+
+v0.1.0 时 `visualbrowser.target-url.allow-loopback=true` 没有任何启动期检查；
+prod 误配为 `true` 会启动成功，直到运行时首次 SSRF 触发才报错，且错误信息
+只说"被运行时策略拦截"。
+
+v0.1.1 起（[`docs/specs/m8.md`](../specs/m8.md) D3，issue #62），新增
+[`LoopbackStartupFailFastValidator`](../../src/main/java/com/visualspider/shared/config/LoopbackStartupFailFastValidator.java)：
+
+- 在 Spring Bean 创建期（早于端口绑定）读取 `visualbrowser.target-url.allow-loopback` 与 `spring.profiles.active`。
+- 当 `allow-loopback=true` 且激活 profile **不在** `dev` / `it` / `smoke` / `e2e` 之列 → 抛 `IllegalStateException`，错误信息明确指向 [`docs/deploy/configuration.md §3`](../deploy/configuration.md)。
+- 激活 profile 包含上述白名单之一 → 仅 INFO 日志放行。
+
+**这不是策略变更**：运行时 SSRF 拦截逻辑（`PublicTargetUrlPolicy` /
+`IpAddressClassifier` / DNS 解析 + 重定向 + 子资源）保持 M6-1 不变；本类只在
+启动期补一层 fail-fast，让 prod 误配在启动第一行就暴露。
+
+**残余风险未变**：本类只防"prod 误配 allow-loopback=true"这一类配置错误；
+不替代运行时拦截，不防部署侧绕过（见 §3 / §4）。
