@@ -39,11 +39,11 @@ import org.springframework.web.socket.WebSocketSession;
  *
  * <p>覆盖：
  * <ul>
- *   <li>PROGRESS / EVENT / TERMINAL 帧 schemaVersion=1 + 字段名一致</li>
+ *   <li>PROGRESS / EVENT / TERMINAL 帧 schemaVersion=2 + 字段名一致（M5 spec §D13 升 v2）</li>
  *   <li>握手先发 PROGRESS 快照 + 已写入事件</li>
  *   <li>守护 tick：state/count 变 -&gt; PROGRESS；event 增量 -&gt; EVENT</li>
  *   <li>终态 -&gt; TERMINAL + 服务端 close</li>
- *   <li>parseClientMessage：仅 schemaVersion=1 + type=CANCEL 通过</li>
+ *   <li>parseClientMessage：仅 schemaVersion=2 + type=CANCEL 通过（v1 兼容已在 M5-6 移除，参见 #63）</li>
  *   <li>canCancel：admin 通过；owner 通过；他人拒</li>
  * </ul>
  */
@@ -127,10 +127,10 @@ class RunProgressBroadcasterTest {
 
         RunProgressBroadcaster.Subscription sub = broadcaster.subscribe(42L, ws, new ActorId(99L));
 
-        // 第一个 send 必须是 PROGRESS
+        // 第一个 send 必须是 PROGRESS（schemaVersion=2，M5-6 起的当前契约）
         assertThat(sent).isNotEmpty();
         TextMessage firstFrame = sent.get(0);
-        assertThat(firstFrame.getPayload()).startsWith("{\"schemaVersion\":1,\"type\":\"PROGRESS\"");
+        assertThat(firstFrame.getPayload()).startsWith("{\"schemaVersion\":2,\"type\":\"PROGRESS\"");
         // 验证字段
         assertThat(firstFrame.getPayload()).contains("\"status\":\"RUNNING\"");
         assertThat(firstFrame.getPayload()).contains("\"recordCountRaw\":0");
@@ -171,10 +171,10 @@ class RunProgressBroadcasterTest {
 
         assertThat(closes).as("终端态须 close").isNotEmpty();
         assertThat(closes.get(0)).isEqualTo(CloseStatus.NORMAL);
-        // 必须出现 TERMINAL 帧
+        // 必须出现 TERMINAL 帧（schemaVersion=2，M5-6 起的当前契约）
         boolean terminalSeen = sent.stream()
                 .anyMatch(tm -> tm.getPayload().startsWith(
-                        "{\"schemaVersion\":1,\"type\":\"TERMINAL\""));
+                        "{\"schemaVersion\":2,\"type\":\"TERMINAL\""));
         assertThat(terminalSeen).as("需发 TERMINAL").isTrue();
 
         sub.cancel();
@@ -234,23 +234,27 @@ class RunProgressBroadcasterTest {
     }
 
     @Test
-    void parseClientMessageAcceptsCancelV1() throws Exception {
-        String json = "{\"schemaVersion\":1,\"type\":\"CANCEL\"}";
+    void parseClientMessageAcceptsCancelV2() throws Exception {
+        // M5-6 起只接受 schemaVersion=2；v1 兼容已在 #63 移除。
+        String json = "{\"schemaVersion\":2,\"type\":\"CANCEL\"}";
         RunProgressBroadcaster.CancelMessage msg = broadcaster.parseClientMessage(json);
         assertThat(msg).isNotNull();
-        assertThat(msg.schemaVersion).isEqualTo(1);
+        assertThat(msg.schemaVersion).isEqualTo(2);
         assertThat(msg.type).isEqualTo("CANCEL");
     }
 
     @Test
     void parseClientMessageRejectsWrongType() throws Exception {
-        assertThat(broadcaster.parseClientMessage("{\"schemaVersion\":1,\"type\":\"OTHER\"}"))
+        assertThat(broadcaster.parseClientMessage("{\"schemaVersion\":2,\"type\":\"OTHER\"}"))
                 .isNull();
     }
 
     @Test
     void parseClientMessageRejectsWrongSchemaVersion() throws Exception {
-        assertThat(broadcaster.parseClientMessage("{\"schemaVersion\":2,\"type\":\"CANCEL\"}"))
+        // v1 是已废弃的旧契约（#63 移除）；未知版本（v99）显式拒绝；缺字段也拒绝。
+        assertThat(broadcaster.parseClientMessage("{\"schemaVersion\":1,\"type\":\"CANCEL\"}"))
+                .isNull();
+        assertThat(broadcaster.parseClientMessage("{\"schemaVersion\":99,\"type\":\"CANCEL\"}"))
                 .isNull();
         assertThat(broadcaster.parseClientMessage("{\"type\":\"CANCEL\"}"))
                 .isNull();

@@ -346,7 +346,8 @@ public class RunProgressBroadcaster {
     }
 
     /**
-     * 校验客户端入站帧：仅 {@code CANCEL} 类型，schemaVersion=1。其余类型一律拒。
+     * 校验客户端入站帧：仅 {@code CANCEL} 类型，schemaVersion=2（与 {@link #SCHEMA_VERSION} 一致）。
+     * v1 兼容已在 M5-6 移除（#63）；未知 / 缺失 schemaVersion 一律拒。
      *
      * @return 解析成功返回 {@link CancelMessage}；否则 null
      */
