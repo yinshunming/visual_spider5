@@ -113,6 +113,8 @@ JAVA_ARGS=("-jar" "$JAR_PATH" "--server.port=$SERVER_PORT")
 if [ "$LOOPBACK_ALLOWED" = "true" ]; then
     JAVA_ARGS+=("--visualbrowser.target-url.allow-loopback=true")
 fi
+# M8-3: 启动期 fail-fast validator 旁路需要 dev/it/smoke/e2e profile
+JAVA_ARGS+=("--spring.profiles.active=smoke")
 nohup java "${JAVA_ARGS[@]}" >"$APP_OUT_LOG" 2>"$APP_ERR_LOG" &
 APP_PID=$!
 echo "$APP_PID" >"$APP_PID_FILE"

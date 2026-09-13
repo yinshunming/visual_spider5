@@ -98,7 +98,7 @@ Ok "fixture server 已起 (pid=$($FixProc.Id))"
 # ---- 启应用 ----
 Step 4 '启动应用（loopback-豁免={0}，端口 {1}）' -f $LoopbackAllowed, ($BaseUrl -replace 'http://localhost:', '')
 $serverPort = $BaseUrl -replace 'http://localhost:', ''
-$jvmArgs = @('-jar', $JarPath, "--server.port=$serverPort")
+$jvmArgs = @('-jar', $JarPath, '--spring.profiles.active=smoke', "--server.port=$serverPort")
 if ($LoopbackAllowed) { $jvmArgs += '--visualbrowser.target-url.allow-loopback=true' }
 $AppProc = Start-Process -FilePath 'java' -ArgumentList $jvmArgs `
     -PassThru -RedirectStandardOutput $AppOutLog -RedirectStandardError $AppErrLog

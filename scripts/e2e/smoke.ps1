@@ -58,6 +58,7 @@ New-Item -ItemType Directory -Force -Path logs | Out-Null
 $JarPath = if ($Env:VISUALSPIDER_JAR_PATH) { $Env:VISUALSPIDER_JAR_PATH } else { 'target/visual-spider5-0.1.0.jar' }
 $proc = Start-Process -FilePath 'java' -ArgumentList @(
     '-jar', $JarPath,
+    '--spring.profiles.active=smoke',
     '--visualbrowser.target-url.allow-loopback=true'
 ) `
     -RedirectStandardOutput 'logs/app.out.log' -RedirectStandardError 'logs/app.err.log' -NoNewWindow -PassThru

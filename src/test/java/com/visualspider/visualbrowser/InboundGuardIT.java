@@ -41,12 +41,14 @@ import org.springframework.web.socket.server.standard.ServletServerContainerFact
  *
  * <p>用 {@link TestWsConfig} 注册 {@code /ws/test-guard} 端点（{@link InboundGuard}
  * 包裹 echo handler），真实 WS 客户端连接验证。
+ *
+ * <p>M8-3：{@code @TestPropertySource(properties = "visualbrowser.target-url.allow-loopback=false")}
+ * 显式覆盖 property，避免 {@link com.visualspider.shared.config.LoopbackStartupFailFastValidator}
+ * 在无 {@code @ActiveProfiles("it")} 上下文下误触发 fail-fast。
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
         classes = {com.visualspider.Application.class, InboundGuardIT.TestWsConfig.class})
 @TestPropertySource(properties = "visualbrowser.target-url.allow-loopback=false")
-// M8-3: 覆盖 allow-loopback=false 避免 LoopbackStartupFailFastValidator 误触发 fail-fast。
-// InboundGuardIT 没有 @ActiveProfiles("it")，因此需要显式覆盖 property。
 class InboundGuardIT {
 
     @LocalServerPort
